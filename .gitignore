@@ -1,0 +1,8 @@
+node_modules/
+_site/
+test/screenshots/
+web/index.html
+web/artifact.html
+*.zip
+screenshot-*.png
+.DS_Store

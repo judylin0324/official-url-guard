@@ -1,0 +1,31 @@
+name: 打包發行版
+# 推送 v0.4.0 這類標籤時，自動打包擴充功能並建立 GitHub Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 檢查版本號
+        run: |
+          v=$(node -p "require('./manifest.json').version")
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "manifest.json 版本 v$v 和標籤 $GITHUB_REF_NAME 不一致"; exit 1; }
+      - run: npm test
+      - name: 打包擴充功能
+        run: |
+          mkdir -p dist
+          zip -qr "dist/official-url-guard-${GITHUB_REF_NAME}.zip" manifest.json icons src README.md -x '*.DS_Store'
+      - name: 建立 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.zip --title "官網守門員 $GITHUB_REF_NAME" --generate-notes

@@ -1,0 +1,41 @@
+name: 每週真實資料評估
+# 用最新的 TWNIC、165、Chrome 台灣熱門網站資料重跑評估，報告存在 reports/eval-latest.txt
+
+on:
+  schedule:
+    - cron: '37 1 * * 1' # 每週一 09:37（台灣時間）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 下載公開資料
+        run: bash tools/fetch-eval-data.sh eval-data
+      - name: 評估判斷規則與小模型
+        run: |
+          mkdir -p reports
+          {
+            echo "官網守門員每週評估（$(date -u +%F)）"
+            echo
+            node tools/eval-real.mjs eval-data --examples
+            echo
+            echo "── 網域名稱小模型（只量測，不覆寫模型）──"
+            node tools/train-model.mjs eval-data
+          } > reports/eval-latest.txt
+      - name: 寫入摘要
+        run: |
+          { echo '```'; head -40 reports/eval-latest.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: 提交報告
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reports/eval-latest.txt
+          if git diff --cached --quiet; then echo "報告沒有變化"; else git commit -m "每週評估報告 $(date -u +%F)" && git push; fi

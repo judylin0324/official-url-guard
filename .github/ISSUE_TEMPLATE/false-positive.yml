@@ -1,0 +1,36 @@
+name: 回報誤判（正常網站被警告）
+description: 官網守門員把正常網站判成「可疑」或「高度疑似詐騙」
+title: "[誤判] "
+labels: ["誤判"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感謝回報！**這裡的內容會公開**，請不要填寫帳號、密碼、身分證字號、電話等個人資料。
+        從插件按「回報誤判」時，網址只會保留到路徑，查詢參數已自動移除。
+  - type: input
+    id: url
+    attributes:
+      label: 網址
+      description: 被誤判的網址
+    validations:
+      required: true
+  - type: input
+    id: verdict
+    attributes:
+      label: 插件的判斷結果
+  - type: textarea
+    id: reasons
+    attributes:
+      label: 插件列出的原因
+  - type: textarea
+    id: why
+    attributes:
+      label: 為什麼你認為這是正常網站？
+      description: 例如：這是某公司的官方網站（公司名稱、統編、官方公告連結），或是你長期使用的服務。
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 插件版本

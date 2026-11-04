@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>官網守門員隱私權政策</title>
+<style>
+  :root { --bg: #f6f8fa; --fg: #1f2328; --muted: #57606a; --line: #d0d7de; --card: #fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #30363d; --card: #161b22; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.75 "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 48px; }
+  main { max-width: 720px; margin: 0 auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+  h1 { font-size: 26px; margin: 0 0 4px; } h2 { font-size: 19px; margin: 28px 0 6px; }
+  .muted { color: var(--muted); } a { color: #0969da; } li + li { margin-top: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>官網守門員隱私權政策</h1>
+  <p class="muted">適用於「官網守門員」瀏覽器擴充功能與簡訊檢查網頁。最後更新：2026 年 11 月。</p>
+
+  <h2>我們不收集你的資料</h2>
+  <p>所有判斷都在你的裝置上完成。官網守門員沒有伺服器，不會上傳、儲存或販售你的瀏覽紀錄、網頁內容、輸入的文字或任何個人資料。</p>
+
+  <h2>擴充功能在你的電腦上讀取的資料</h2>
+  <ul>
+    <li><b>你造訪的網址</b>：用來判斷是不是官方網站、是否在涉詐清單上。</li>
+    <li><b>網頁上的文字與欄位種類</b>：用來判斷網頁是否自稱某機構、要你付款或輸入驗證碼。只看「有沒有信用卡欄位」這類是非值；打字時的信用卡號、身分證字號檢查只產生「是／否」，內容不會離開網頁。</li>
+    <li><b>你的設定、自訂信任／封鎖清單、攔截次數</b>：存在瀏覽器本機的擴充功能儲存空間。</li>
+  </ul>
+
+  <h2>會連上網路的情況</h2>
+  <ul>
+    <li><b>下載涉詐網域清單與官方網站清單</b>（預設每天一次）：從 GitHub、本專案網站、內政部下載公開檔案，不附帶任何瀏覽資料。可在設定頁關閉。</li>
+    <li><b>查詢網域註冊日期</b>（預設關閉）：開啟後，不在官方清單的網域名稱會送到 rdap.org 查詢，只送網域名稱，不送完整網址。</li>
+    <li><b>你主動按下的按鈕</b>：「一鍵通報」會開啟數位發展部網詐通報查詢網；「回報誤判／漏判」會開啟本專案的 GitHub Issues 頁面，網址只保留到路徑（查詢參數會移除），送出前你可以修改或取消。</li>
+  </ul>
+
+  <h2>簡訊檢查網頁</h2>
+  <p>你貼上的訊息只在你的瀏覽器裡分析，不會傳送到任何地方。</p>
+
+  <h2>聯絡我們</h2>
+  <p>原始碼與問題回報：<a href="https://github.com/judylin0324/official-url-guard">github.com/judylin0324/official-url-guard</a></p>
+</main>
+</body>
+</html>

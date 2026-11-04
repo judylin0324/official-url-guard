@@ -1,0 +1,96 @@
+import { renderVerdict, h, send } from './ui.js';
+
+const $ = (id) => document.getElementById(id);
+
+async function currentTab() {
+  // ?tabId= 讓自動化測試能指定要顯示哪個分頁
+  const forced = Number(new URLSearchParams(location.search).get('tabId'));
+  if (forced) return chrome.tabs.get(forced);
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); } catch { /* 忽略 */ }
+}
+
+function actionButtons(v, tab) {
+  const box = $('actions');
+  box.replaceChildren();
+  if (!v || !v.host || ['skip', 'invalid'].includes(v.level)) return;
+  const domain = v.registrable || v.host;
+  if (['danger', 'caution', 'platform', 'unknown'].includes(v.level)) {
+    box.append(h('button', {
+      class: 'btn red', text: '一鍵通報詐騙',
+      onclick: async () => { const r = await send({ type: 'prepareReport', url: v.url, title: tab && tab.title }); if (r) await copy(r.text); window.close(); },
+    }));
+  }
+  if (['unknown', 'caution'].includes(v.level)) {
+    box.append(h('button', {
+      class: 'btn small', text: '信任此網站',
+      title: `把 ${domain} 加入自訂信任清單`,
+      onclick: async () => { await send({ type: 'trustDomain', domain }); refresh(); },
+    }));
+  }
+  if (['danger', 'caution', 'platform'].includes(v.level)) {
+    box.append(h('button', { class: 'btn small', text: '回報誤判', title: '這是正常網站，卻被警告', onclick: () => { send({ type: 'openIssue', kind: 'false-positive', url: v.url }); window.close(); } }));
+  } else if (['unknown', 'official', 'gov'].includes(v.level)) {
+    box.append(h('button', { class: 'btn small', text: '回報漏判', title: '這是詐騙網站，卻沒有被警告', onclick: () => { send({ type: 'openIssue', kind: 'missed-scam', url: v.url }); window.close(); } }));
+  }
+  if (['unknown', 'caution', 'platform'].includes(v.level)) {
+    box.append(h('button', {
+      class: 'btn small', text: '封鎖此網站',
+      title: `把 ${domain} 加入自訂封鎖清單`,
+      onclick: async () => { await send({ type: 'blockDomain', domain }); if (tab) chrome.tabs.reload(tab.id); window.close(); },
+    }));
+  }
+}
+
+async function refresh() {
+  const tab = await currentTab();
+  const url = tab && tab.url;
+  let v;
+  if (url && url.startsWith(chrome.runtime.getURL('src/pages/warning.html'))) {
+    v = await send({ type: 'assess', url: new URL(url).searchParams.get('url') });
+  } else if (url && /^https?:/i.test(url)) {
+    v = await send({ type: 'getTabVerdict', tabId: tab.id, url });
+  } else {
+    v = { level: 'skip', reasons: [{ text: '瀏覽器內建頁面或空白頁不需要檢查', weight: 0 }] };
+  }
+  $('current').replaceChildren(renderVerdict(v));
+  actionButtons(v, tab);
+}
+
+async function manualCheck() {
+  const text = $('manualInput').value;
+  const out = $('manualResult');
+  if (!text.trim()) return;
+  const r = await send({ type: 'assessMessage', text });
+  const nodes = [];
+  for (const v of r.items) {
+    nodes.push(renderVerdict(v));
+    if (v.level === 'danger' || v.level === 'caution') {
+      nodes.push(h('div', { class: 'actions', style: 'margin:6px 0 4px' }, [
+        h('button', {
+          class: 'btn red small', text: '一鍵通報這個網址',
+          onclick: async () => { const res = await send({ type: 'prepareReport', url: v.url }); if (res) await copy(res.text); window.close(); },
+        }),
+      ]));
+    }
+  }
+  if (r.noUrl) nodes.push(h('div', { class: 'verdict lv-unknown' }, [h('div', { class: 'title', text: '訊息裡找不到網址' })]));
+  for (const note of r.messageNotes) nodes.push(h('div', { class: 'verdict lv-caution', style: 'margin-top:6px', text: note }));
+  out.replaceChildren(...nodes);
+}
+
+$('manualBtn').addEventListener('click', manualCheck);
+$('manualInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); manualCheck(); } });
+$('openOptions').addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
+
+send({ type: 'status' }).then((s) => {
+  if (!s) return;
+  const blocked = (s.stats.url || 0) + (s.stats.page || 0);
+  $('stats').textContent = (blocked ? `已攔下 ${blocked} 次 · ` : '') + `官方 ${s.officialCount} 網域 · 165 清單 ${s.blocklistCount.toLocaleString()} 筆`;
+});
+
+refresh();

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 165 全民防騙網（已經被騙或需要協助）
+    url: https://165.npa.gov.tw/
+    about: 遇到詐騙請撥打 165 反詐騙諮詢專線
+  - name: 網詐通報查詢網（向政府通報詐騙網站）
+    url: https://fraudbuster.digiat.org.tw/
+    about: 數位發展部的詐騙網站通報平台

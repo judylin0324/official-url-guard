@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>已攔截可疑網站 - 官網守門員</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    body { background: var(--red); min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 6vh 16px 32px; }
+    .card { background: var(--card); width: min(620px, 100%); border-radius: 18px; box-shadow: 0 24px 60px rgba(0,0,0,.3); overflow: hidden; }
+    .head { padding: 26px 28px 18px; }
+    .head .badge { display: inline-flex; align-items: center; gap: 8px; color: var(--red); font-weight: 700; font-size: 14px; }
+    .head .badge img { width: 22px; height: 22px; }
+    h1 { margin: 10px 0 6px; font-size: 26px; line-height: 1.3; }
+    .lead { margin: 0; color: var(--muted); font-size: 15px; }
+    .body { padding: 0 28px 26px; display: grid; gap: 16px; }
+    .urlbox { background: var(--red-bg); border: 1px solid var(--red); border-radius: 12px; padding: 12px 14px; }
+    .urlbox .label { font-size: 12px; color: var(--muted); }
+    .urlbox .host { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; word-break: break-all; }
+    .urlbox .host b { color: var(--red); font-size: 17px; }
+    .imp { background: var(--green-bg); border: 1px solid var(--green); border-radius: 12px; padding: 12px 14px; }
+    .imp b { color: var(--green); }
+    ul { margin: 0; padding-left: 20px; }
+    li { margin: 4px 0; }
+    .btns { display: grid; gap: 8px; }
+    .btns .btn { padding: 12px; font-size: 16px; }
+    details { border-top: 1px solid var(--line); padding-top: 12px; color: var(--muted); }
+    summary { cursor: pointer; }
+    details label { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; color: var(--text); }
+    .note { font-size: 13px; color: var(--muted); margin: 0; }
+    #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #1f2328; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px; display: none; max-width: calc(100% - 32px); }
+  </style>
+</head>
+<body>
+  <div class="card" role="alert">
+    <div class="head">
+      <div class="badge"><img src="../../icons/icon-48.png" alt="">官網守門員已攔截</div>
+      <h1>這個網站很可能是詐騙</h1>
+      <p class="lead">網頁可以做得跟官方一模一樣，但網址騙不了人。在你連線之前，我們先幫你擋下來了。</p>
+    </div>
+    <div class="body">
+      <div class="urlbox">
+        <div class="label">你要前往的網址，真正的網域是粗體部分</div>
+        <div class="host" id="host"></div>
+      </div>
+      <div class="imp" id="imp" hidden></div>
+      <div>
+        <strong>為什麼可疑</strong>
+        <ul id="reasons"></ul>
+      </div>
+      <div class="btns">
+        <button class="btn primary" id="leave">離開，回到安全的地方</button>
+        <a class="btn green" id="official" hidden></a>
+        <button class="btn red" id="report">一鍵通報詐騙網站</button>
+      </div>
+      <p class="note">有疑問請撥打 <b>165</b> 反詐騙諮詢專線。不要點簡訊裡的連結，請自己輸入官方網址。</p>
+      <p class="note">這其實是正常網站？<a href="#" id="falsePositive">回報誤判</a>，幫我們改進判斷。</p>
+      <details>
+        <summary>我確定這個網站是安全的</summary>
+        <label><input type="checkbox" id="ack"> 我了解這可能是詐騙網站，並願意自行承擔風險</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn small" id="proceed" disabled>仍要前往（30 分鐘內不再攔截）</button>
+          <button class="btn small" id="trust" disabled>這是官方網站，加入信任清單</button>
+        </div>
+      </details>
+    </div>
+  </div>
+  <div id="toast" role="status"></div>
+  <script type="module" src="warning.js"></script>
+</body>
+</html>

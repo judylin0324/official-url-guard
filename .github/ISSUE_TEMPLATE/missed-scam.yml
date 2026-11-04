@@ -1,0 +1,42 @@
+name: 回報漏判（詐騙網站沒有被警告）
+description: 遇到詐騙網站或詐騙訊息，但官網守門員沒有提醒
+title: "[漏判] "
+labels: ["漏判"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感謝回報！這份回報用來改進判斷規則。**請同時向政府通報**：[網詐通報查詢網](https://fraudbuster.digiat.org.tw/) 或撥打 165。
+        **這裡的內容會公開**，請不要填寫帳號、密碼、身分證字號、電話等個人資料；簡訊內容請把你的姓名、電話遮掉。
+  - type: input
+    id: url
+    attributes:
+      label: 詐騙網址
+    validations:
+      required: true
+  - type: dropdown
+    id: channel
+    attributes:
+      label: 從哪裡收到的？
+      options: [簡訊, LINE, 臉書或 IG 廣告, Email, 搜尋結果, 其他]
+  - type: input
+    id: claimed
+    attributes:
+      label: 它冒充誰？
+      description: 例如：監理站、中華郵政、蝦皮、某銀行、某投資老師
+  - type: textarea
+    id: message
+    attributes:
+      label: 訊息內容（選填，請遮掉個資）
+  - type: input
+    id: verdict
+    attributes:
+      label: 插件的判斷結果
+  - type: textarea
+    id: reasons
+    attributes:
+      label: 插件列出的原因
+  - type: input
+    id: version
+    attributes:
+      label: 插件版本

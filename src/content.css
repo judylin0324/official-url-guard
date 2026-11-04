@@ -1,0 +1,10 @@
+/* 網頁中的可疑連結標示（只加外框，不改變排版） */
+a[data-oug-level="danger"] {
+  outline: 2px dashed #cf222e !important;
+  outline-offset: 2px !important;
+  background-color: rgba(207, 34, 46, 0.08) !important;
+}
+a[data-oug-level="caution"] {
+  outline: 2px dashed #d97706 !important;
+  outline-offset: 2px !important;
+}

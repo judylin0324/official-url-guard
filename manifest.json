@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "官網守門員 - 假冒網站攔截",
+  "short_name": "官網守門員",
+  "version": "0.4.0",
+  "description": "確認網址是不是官方網站。攔截假冒停車費、罰單、ETC、包裹、運動幣、抽獎等要你付款或轉帳的詐騙網頁，並可一鍵通報。",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "官網守門員",
+    "default_popup": "src/pages/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "options_page": "src/pages/options.html",
+  "permissions": [
+    "storage",
+    "tabs",
+    "webNavigation",
+    "alarms",
+    "contextMenus",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "css": [
+        "src/content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "minimum_chrome_version": "116",
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/pages/warning.html"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}

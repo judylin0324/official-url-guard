@@ -1,0 +1,260 @@
+<title>官網守門員簡訊檢查</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="把可疑簡訊、LINE 訊息整段貼上，不用點開就能確認連結是不是官方網站。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* 版面：手機優先的單欄。上方貼訊息，下方是一張張「蓋章」判定卡，像櫃台核對公文。 */
+:root {
+  --paper: #eef2f0;        /* 底色：帶一點綠的灰紙 */
+  --sheet: #ffffff;        /* 卡片 */
+  --ink: #17201c;          /* 主要文字 */
+  --ink-soft: #55625c;     /* 次要文字 */
+  --rule: #cfd8d3;         /* 分隔線 */
+  --seal: #c21f32;         /* 印泥紅：危險 */
+  --seal-bg: #fbeceb;
+  --official: #11724a;     /* 官方綠 */
+  --official-bg: #e3f3ea;
+  --amber: #a85a06;        /* 可疑 */
+  --amber-bg: #fbf0dc;
+  --action: #1c4f86;       /* 按鈕藍 */
+  --action-ink: #ffffff;
+  --mark: #fff1a8;         /* 網域螢光標記 */
+  --font-display: "Noto Serif TC", "Songti TC", "PMingLiU", serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #101614; --sheet: #182120; --ink: #e5ece8; --ink-soft: #9fb0a8; --rule: #2c3833;
+    --seal: #ff6b6b; --seal-bg: #2c1618; --official: #4cc98d; --official-bg: #13281f; --amber: #f0a64a; --amber-bg: #2a2012;
+    --action: #6aa5ea; --action-ink: #0d1520; --mark: #5a4a00; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #101614; --sheet: #182120; --ink: #e5ece8; --ink-soft: #9fb0a8; --rule: #2c3833;
+  --seal: #ff6b6b; --seal-bg: #2c1618; --official: #4cc98d; --official-bg: #13281f; --amber: #f0a64a; --amber-bg: #2a2012;
+  --action: #6aa5ea; --action-ink: #0d1520; --mark: #5a4a00; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.65;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; flex-direction: column; gap: 4px; }
+h1 { font-family: var(--font-display); font-weight: 900; font-size: clamp(26px, 7vw, 34px); line-height: 1.2; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+.lead { margin: 0; color: var(--ink-soft); }
+.panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+label.cap { font-size: 13px; font-weight: 700; color: var(--ink-soft); letter-spacing: .04em; }
+textarea {
+  width: 100%; min-height: 128px; resize: vertical; font: inherit; font-size: 16px; line-height: 1.6; color: var(--ink);
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px;
+}
+textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--action); outline-offset: 2px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button, .btn {
+  font: inherit; font-weight: 700; border-radius: 10px; padding: 10px 16px; cursor: pointer; border: 1px solid var(--rule);
+  background: var(--sheet); color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+button.primary { background: var(--action); color: var(--action-ink); border-color: var(--action); flex: 1 1 160px; font-size: 17px; }
+.example-tag { font-size: 12px; color: var(--amber); font-weight: 700; }
+.hint { font-size: 13px; color: var(--ink-soft); margin: 0; }
+
+/* 判定卡 */
+#results { display: flex; flex-direction: column; gap: 14px; }
+#results:empty { display: none; }
+.card { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; padding: 16px; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; }
+.card > .body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.seal {
+  width: 64px; height: 64px; border: 3px solid currentColor; border-radius: 6px; display: grid; place-items: center;
+  font-family: var(--font-display); font-weight: 900; font-size: 19px; line-height: 1.05; text-align: center; letter-spacing: .05em;
+  transform: rotate(-6deg); padding: 4px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .card .seal { animation: stamp .28s cubic-bezier(.2, .9, .3, 1.3) both; }
+  @keyframes stamp { from { transform: rotate(-6deg) scale(1.35); opacity: .2; } to { transform: rotate(-6deg) scale(1); opacity: 1; } }
+}
+.lv-danger { border-color: var(--seal); background: var(--seal-bg); } .lv-danger .seal { color: var(--seal); }
+.lv-caution, .lv-platform { border-color: var(--amber); background: var(--amber-bg); } .lv-caution .seal, .lv-platform .seal { color: var(--amber); }
+.lv-official, .lv-gov, .lv-trusted { border-color: var(--official); background: var(--official-bg); } .lv-official .seal, .lv-gov .seal, .lv-trusted .seal { color: var(--official); }
+.lv-unknown .seal, .lv-skip .seal, .lv-invalid .seal { color: var(--ink-soft); }
+.verdict-title { font-weight: 700; font-size: 18px; line-height: 1.35; margin: 0; }
+.who { color: var(--ink-soft); font-size: 14px; }
+.host { font-family: var(--font-mono); font-size: 14px; word-break: break-all; }
+.host mark { background: var(--mark); color: inherit; font-weight: 700; padding: 0 2px; border-radius: 3px; }
+.reasons { margin: 4px 0 0; padding-left: 20px; font-size: 15px; }
+.reasons li + li { margin-top: 3px; }
+.official-box { grid-column: 1 / -1; background: var(--sheet); border: 1px dashed var(--official); border-radius: 10px; padding: 10px 12px; font-size: 15px; }
+.official-box b { color: var(--official); font-family: var(--font-mono); }
+.actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.actions .btn, .actions button { font-size: 14px; padding: 8px 12px; }
+.btn.go { background: var(--official); border-color: var(--official); color: var(--sheet); }
+.btn.report { color: var(--seal); border: 2px solid var(--seal); background: var(--sheet); }
+.note { background: var(--amber-bg); border: 1px solid var(--amber); border-radius: 12px; padding: 12px 14px; font-size: 15px; }
+.copied { font-size: 13px; color: var(--official); font-weight: 700; }
+
+/* 辨識要點 */
+.tips h2 { font-family: var(--font-display); font-size: 20px; margin: 0; }
+.tips dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; }
+.tips dt { font-family: var(--font-mono); font-weight: 700; color: var(--official); white-space: nowrap; }
+.tips dd { margin: 0; min-width: 0; }
+.anatomy { font-family: var(--font-mono); font-size: 14px; background: var(--paper); border-radius: 8px; padding: 10px 12px; word-break: break-all; }
+.anatomy .fake { color: var(--ink-soft); }
+.anatomy mark { background: var(--mark); color: inherit; font-weight: 700; }
+footer { font-size: 13px; color: var(--ink-soft); display: flex; flex-direction: column; gap: 4px; }
+@media (max-width: 420px) { .seal { width: 54px; height: 54px; font-size: 16px; } .tips dl { grid-template-columns: 1fr; gap: 2px 0; } .tips dd { margin-bottom: 8px; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>官網守門員簡訊檢查</h1>
+    <p class="lead">收到要你繳費、領獎、驗證的簡訊或 LINE？整段貼上，不用點開連結，就能看出網址是不是官方的。</p>
+  </header>
+
+  <form class="panel" id="form">
+    <div class="row" style="justify-content: space-between">
+      <label class="cap" for="msg">貼上訊息</label>
+      <span class="example-tag" id="exampleTag">目前是範例訊息</span>
+    </div>
+    <textarea id="msg" spellcheck="false" placeholder="長按這裡，選「貼上」"></textarea>
+    <div class="row">
+      <button type="submit" class="primary" id="go">檢查</button>
+      <button type="button" id="clear">清除</button>
+      <button type="button" id="next">換一則範例</button>
+    </div>
+    <p class="hint">全部在你的手機上判斷，訊息不會傳到任何地方，也不會開啟連結。</p>
+  </form>
+
+  <section id="results" aria-live="polite"></section>
+
+  <section class="panel tips">
+    <h2>自己也能一眼看穿</h2>
+    <div class="anatomy" aria-label="網址拆解範例"><span class="fake">https://www.mvdis.gov.tw.</span><mark>pay-fine.top</mark><span class="fake">/login</span></div>
+    <p class="hint" style="margin-top:-4px">真正的網域是第一個「/」前面的最後一段（標黃色處），前面寫什麼都可以造假。</p>
+    <dl>
+      <dt>.gov.tw</dt><dd>政府機關網址一定以 .gov.tw 結尾（臺北市是 .gov.taipei）。停車費、罰單、稅、健保、運動幣、普發現金都一樣。</dd>
+      <dt>111</dt><dd>政府機關的簡訊從專屬短碼「111」發出，開頭會有機關名稱和你手機號碼末三碼。三項都對才是真的；其他號碼自稱政府，先存疑。</dd>
+      <dt>不先付錢</dt><dd>領獎、領補助、兌換點數，都不需要先刷卡、轉帳或給簡訊驗證碼。</dd>
+      <dt>165</dt><dd>不確定就打 165 反詐騙諮詢專線，或自己輸入官方網址查詢。</dd>
+    </dl>
+  </section>
+
+  <footer>
+    <span id="stat"></span>
+    <span>判斷依據：官方網站清單、仿冒網址特徵、訊息自稱的機構與連結是否一致。不在清單上不代表一定是詐騙。</span>
+  </footer>
+</div>
+
+<script>
+/*ENGINE*/
+</script>
+<script>
+(() => {
+  const { buildContext, assessMessage, OFFICIAL_SITES, issueUrl } = window.OUG;
+  const ctx = buildContext();
+  const REPORT_URL = 'https://fraudbuster.digiat.org.tw/accessibility/index';
+  const EXAMPLES = [
+    '【監理服務網】您有一筆交通違規罰鍰逾期未繳，請於今日內至 https://www.mvdis.gov.tw.pay-fine.top/login 繳納，逾期將吊扣駕照。',
+    '[臺北市停車管理工程處] 您的車輛 ABC-1234 停車費尚未繳納，請盡速繳費以免產生滯納金 https://reurl.cc/x7Yz9q',
+    '您的運動幣 500 元即將到期失效，請立即登入領取：sport-coin-tw.net/get',
+    '【中華郵政】您的包裹因地址不完整無法投遞，請點擊 post-tw.cfd 更新資料並支付補運費 NT$32',
+    '本期統一發票中獎號碼已公布，請到 https://www.einvoice.nat.gov.tw/ 查詢。',
+  ];
+  const SEAL = { danger: '疑似\n詐騙', caution: '請\n小心', platform: '請\n小心', official: '官方\n網站', gov: '政府\n網域', trusted: '已\n信任', unknown: '未知', skip: '略過', invalid: '無效' };
+  const TITLE = {
+    danger: '高度疑似詐騙網站，不要點開', caution: '有可疑特徵，先別輸入任何資料', platform: '網域是官方平台，但內容任何人都能建立',
+    official: '官方網站', gov: '政府／學術機構網域', trusted: '你信任的網站', unknown: '不在官方清單中', skip: '不需要檢查', invalid: '看不懂這個網址',
+  };
+  const $ = (id) => document.getElementById(id);
+  let exampleIndex = 0;
+
+  function h(tag, attrs = {}, kids = []) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v == null || v === false) continue;
+      if (k === 'text') e.textContent = v; else if (k === 'class') e.className = v;
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+    }
+    for (const c of [].concat(kids)) if (c != null && c !== false) e.append(c);
+    return e;
+  }
+
+  function hostNode(v) {
+    const host = v.displayHost || v.host || '', reg = v.registrable || '';
+    const d = h('div', { class: 'host' });
+    if (reg && host.endsWith(reg) && host !== reg) d.append(host.slice(0, host.length - reg.length), h('mark', { text: reg }));
+    else d.append(h('mark', { text: host }));
+    return d;
+  }
+
+  function reportText(v) {
+    const lines = ['【可疑詐騙網址通報】', `網址：${v.url}`, `實際網域：${v.registrable || v.host}`, `發現時間：${new Date().toLocaleString('zh-TW', { hour12: false })}`];
+    if (v.impersonating) lines.push(`疑似冒充：${v.impersonating.name}${v.impersonating.domain ? `（官方網址為 ${v.impersonating.domain}）` : ''}`);
+    const rs = v.reasons.filter((r) => r.weight > 0).slice(0, 5);
+    if (rs.length) { lines.push('可疑原因：'); rs.forEach((r, i) => lines.push(`${i + 1}. ${r.text}`)); }
+    lines.push('（由「官網守門員」簡訊檢查整理）');
+    return lines.join('\n');
+  }
+
+  function card(v) {
+    const actions = [];
+    const imp = v.impersonating;
+    if (imp && imp.url && ['danger', 'caution'].includes(v.level)) actions.push(h('a', { class: 'btn go', href: imp.url, target: '_blank', rel: 'noopener', text: `前往${imp.name}官網` }));
+    if (['danger', 'caution', 'platform'].includes(v.level)) {
+      const done = h('span', { class: 'copied', hidden: true, text: '已複製，到通報網站貼上即可' });
+      actions.push(h('button', {
+        type: 'button', class: 'btn report', text: '複製通報內容',
+        onclick: async () => {
+          try { await navigator.clipboard.writeText(reportText(v)); done.hidden = false; }
+          catch { done.textContent = '無法自動複製，請長按下方網址複製'; done.hidden = false; }
+        },
+      }));
+      actions.push(h('a', { class: 'btn', href: REPORT_URL, target: '_blank', rel: 'noopener', text: '開啟網詐通報網站' }));
+      actions.push(done);
+    }
+    // 誤判／漏判回報（GitHub，內容公開；網址只保留到路徑）
+    const kind = ['danger', 'caution', 'platform'].includes(v.level) ? 'false-positive' : ['unknown'].includes(v.level) ? 'missed-scam' : null;
+    if (kind) actions.push(h('a', { class: 'btn', href: issueUrl(kind, v, 'web'), target: '_blank', rel: 'noopener', text: kind === 'false-positive' ? '這是正常網站？回報誤判' : '這是詐騙？回報漏判' }));
+    return h('article', { class: `card lv-${v.level}` }, [
+      h('div', { class: 'seal', 'aria-hidden': 'true', style: 'white-space:pre-line', text: SEAL[v.level] || '' }),
+      h('div', { class: 'body' }, [
+        h('p', { class: 'verdict-title', text: TITLE[v.level] || '' }),
+        v.match ? h('div', { class: 'who', text: v.match.name }) : null,
+        hostNode(v),
+        h('ul', { class: 'reasons' }, v.reasons.slice(0, 4).map((r) => h('li', { text: r.text }))),
+      ]),
+      imp && ['danger', 'caution'].includes(v.level)
+        ? h('div', { class: 'official-box' }, [`看起來在冒充「${imp.name}」。`, imp.domain ? h('span', {}, ['真正的官方網址是 ', h('b', { text: imp.domain }), '。']) : imp.hint || ''])
+        : null,
+      actions.length ? h('div', { class: 'actions' }, actions) : null,
+    ]);
+  }
+
+  function run() {
+    const text = $('msg').value;
+    const out = $('results');
+    if (!text.trim()) { out.replaceChildren(); return; }
+    const r = assessMessage(text, ctx);
+    const nodes = r.items.map(card);
+    if (r.noUrl) nodes.push(h('div', { class: 'note', text: '訊息裡找不到網址。如果它要你加 LINE、打電話或轉帳，也請先撥 165 確認。' }));
+    for (const n of r.messageNotes) nodes.push(h('div', { class: 'note', text: n }));
+    out.replaceChildren(...nodes);
+  }
+
+  function loadExample(i) {
+    $('msg').value = EXAMPLES[i % EXAMPLES.length];
+    $('exampleTag').hidden = false;
+    run();
+  }
+
+  $('form').addEventListener('submit', (e) => { e.preventDefault(); run(); });
+  $('msg').addEventListener('input', () => { $('exampleTag').hidden = true; });
+  $('clear').addEventListener('click', () => { $('msg').value = ''; $('exampleTag').hidden = true; $('results').replaceChildren(); $('msg').focus(); });
+  $('next').addEventListener('click', () => { exampleIndex++; loadExample(exampleIndex); });
+  $('stat').textContent = `官方網站清單：${OFFICIAL_SITES.length} 個機構、${OFFICIAL_SITES.reduce((n, s) => n + s.domains.length, 0)} 個網域。`;
+  loadExample(0);
+})();
+</script>

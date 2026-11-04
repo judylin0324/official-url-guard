@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>官網守門員設定</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 16px; }
+    header { display: flex; gap: 12px; align-items: center; }
+    header img { width: 48px; height: 48px; }
+    header h1 { margin: 0; font-size: 22px; }
+    header p { margin: 0; color: var(--muted); }
+    section { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+    section h2 { margin: 0 0 4px; font-size: 17px; }
+    section > p { margin: 0 0 12px; color: var(--muted); }
+    .toggle { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line); }
+    .toggle:first-of-type { border-top: 0; }
+    .toggle input { margin-top: 5px; width: 16px; height: 16px; flex: none; }
+    .toggle small { display: block; color: var(--muted); }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+    textarea { min-height: 140px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+    .row input[type="url"] { flex: 1; min-width: 220px; }
+    .stat { font-size: 15px; font-weight: 700; }
+    .saved { color: var(--green); font-weight: 600; }
+    .err { color: var(--red); font-weight: 600; }
+    details summary { cursor: pointer; font-weight: 600; }
+    .cat { margin: 12px 0 4px; font-weight: 700; }
+    .site { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+    .site code { color: var(--muted); text-align: right; word-break: break-all; }
+    ol { margin: 6px 0; padding-left: 20px; }
+    .sources { list-style: none; padding: 0; margin: 4px 0 8px; font-size: 13px; display: grid; gap: 4px; }
+    .sources li { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--line); padding: 3px 0; }
+    .sources .ok { color: var(--green); white-space: nowrap; } .sources .bad { color: var(--red); white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <img src="../../icons/icon-128.png" alt="">
+      <div>
+        <h1>官網守門員</h1>
+        <p>網頁可以做得跟官方一模一樣，但網址騙不了人。</p>
+        <p id="statsLine" class="saved"></p>
+      </div>
+    </header>
+
+    <section>
+      <h2>保護功能</h2>
+      <label class="toggle"><input type="checkbox" data-setting="blockDanger"><span>攔截高風險網址<small>仿冒官方網址、165 涉詐網域等，連線前先顯示警告頁。</small></span></label>
+      <label class="toggle"><input type="checkbox" data-setting="pageGuard"><span>付款／轉帳防護<small>網頁要你刷卡、轉帳、輸入簡訊驗證碼或網銀帳密，網址卻不是它自稱的機構時，跳出全頁警告。</small></span></label>
+      <label class="toggle"><input type="checkbox" data-setting="showBanner"><span>可疑網站提示列<small>在頁面頂端提醒你確認網址。</small></span></label>
+      <label class="toggle"><input type="checkbox" data-setting="markLinks"><span>標示網頁中的可疑連結<small>用虛線框標出可疑連結，以及「顯示的網址和實際連結不同」的連結。</small></span></label>
+      <label class="toggle"><input type="checkbox" data-setting="rdap"><span>查詢網域註冊日期（選用）<small>剛註冊幾天的網域風險很高。開啟後，不在官方清單的網域名稱會送到 rdap.org 查詢（只送網域名稱，不送完整網址）。</small></span></label>
+    </section>
+
+    <section>
+      <h2>涉詐網域清單（165、TWNIC）</h2>
+      <p>政府與民間公開的詐騙網址清單。清單上的網站在連線前就會被攔下，連一個封包都不會送出。很多假投資網站取的是自己的名字，只能靠這份清單攔截。</p>
+      <div class="stat" id="blStat">尚未下載</div>
+      <label class="toggle"><input type="checkbox" data-setting="autoUpdateLists"><span>每天自動從公開來源更新（建議）<small>只下載清單檔案，不會傳送你的瀏覽紀錄。</small></span></label>
+      <ul id="blSources" class="sources"></ul>
+      <div class="row"><button class="btn primary small" id="blUpdate">立即更新</button><span id="blMsg" class="muted"></span></div>
+      <details style="margin-top:12px">
+        <summary>手動匯入或加入其他來源</summary>
+        <ol>
+          <li>手動匯入 CSV 或文字檔（例如從政府資料開放平臺下載的 <a href="https://data.gov.tw/dataset/176455" target="_blank" rel="noopener">165反詐騙諮詢專線_遭停止解析涉詐網站</a>）：<input type="file" id="blFile" accept=".csv,.txt,text/csv,text/plain"></li>
+          <li>其他清單下載網址（每天一起更新）：
+            <div class="row"><input type="url" id="feedUrl" placeholder="https://…（CSV 或一行一個網域）"><button class="btn small" id="feedSave">儲存並更新</button></div>
+          </li>
+        </ol>
+        <div class="muted" id="manualStat"></div>
+      </details>
+      <h3 style="margin:16px 0 4px;font-size:15px">165 詐騙 LINE ID（選用）</h3>
+      <p class="muted" style="margin:0 0 6px">匯入後，加好友連結或網頁上出現清單裡的 LINE ID 就會警告。資料來源：政府資料開放平臺「165反詐騙諮詢專線_詐騙LINE ID」。</p>
+      <div class="stat" id="liStat">尚未匯入</div>
+      <div class="row"><input type="file" id="liFile" accept=".csv,.txt,text/csv,text/plain"></div>
+      <div id="liMsg" class="muted"></div>
+    </section>
+
+    <section>
+      <h2>自訂清單</h2>
+      <p>一行一個網域，例如 <code>example.com.tw</code>（包含它所有的子網域）。</p>
+      <div class="grid2">
+        <label>信任清單（視為官方網站）<textarea id="trusted" spellcheck="false"></textarea></label>
+        <label>封鎖清單（一律攔截）<textarea id="blocked" spellcheck="false"></textarea></label>
+      </div>
+      <div class="row"><button class="btn primary" id="saveLists">儲存清單</button><span id="listMsg"></span></div>
+    </section>
+
+    <section>
+      <h2>一鍵通報</h2>
+      <p>按下「一鍵通報」時，會開啟這個通報網站、自動填入可疑網址（若網站欄位可辨識），並把完整說明複製到剪貼簿。</p>
+      <div class="row">
+        <input type="url" id="reportUrl">
+        <button class="btn small" id="reportSave">儲存</button>
+        <button class="btn small" id="reportReset">恢復預設</button>
+      </div>
+      <div id="reportMsg" class="muted"></div>
+    </section>
+
+    <section>
+      <h2>官方網站清單</h2>
+      <label class="toggle"><input type="checkbox" data-setting="remoteOfficial"><span>每天從專案網站更新官方網站清單<small>修正誤判、新增機構不用等插件改版。下載的清單必須通過安全檢查（不能含涉詐網域、一次最多新增 300 個網域…），否則沿用內建版本。</small></span></label>
+      <p id="officialSource" class="muted" style="margin:0 0 8px"></p>
+      <p id="officialStat">這些網域會顯示為「官方網站」。<code>.gov.tw</code>、<code>.edu.tw</code>、<code>.mil.tw</code> 只有政府機關與學校能申請，也會自動視為可信。</p>
+      <details><summary>展開完整清單</summary><div id="officialList"></div></details>
+    </section>
+
+    <section>
+      <h2>隱私</h2>
+      <p>所有判斷都在你的電腦上完成，不會把瀏覽紀錄送到任何伺服器。唯一的例外是你主動開啟的「查詢網域註冊日期」，以及你自行設定的 165 清單下載網址。</p>
+    </section>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
