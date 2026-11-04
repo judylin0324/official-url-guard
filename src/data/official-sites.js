@@ -29,7 +29,7 @@ export const OFFICIAL_SITES = [
   { name: '165 全民防騙網（內政部警政署）', category: '政府機關', domains: ['165.npa.gov.tw', 'npa.gov.tw'], home: '165.npa.gov.tw', keywords: [], aliases: ['警政署', '165全民防騙', '刑事警察局'], anyText: true },
   { name: '網詐通報查詢網（數位發展部）', category: '政府機關', domains: ['fraudbuster.digiat.org.tw', 'moda.gov.tw'], home: 'fraudbuster.digiat.org.tw', keywords: [], aliases: ['數位發展部', '網詐通報'], anyText: true },
   { name: '台灣自來水公司', category: '公用事業', domains: ['water.gov.tw'], generic: true, keywords: [], aliases: ['台灣自來水', '臺灣自來水', '自來水公司'], anyText: true },
-  { name: '台灣電力公司', category: '公用事業', domains: ['taipower.com.tw'], keywords: ['taipower'], aliases: ['台灣電力', '臺灣電力', '台電公司'], anyText: true },
+  { name: '台灣電力公司', category: '公用事業', domains: ['taipower.com.tw'], keywords: ['taipower'], aliases: ['台灣電力', '臺灣電力', '台電公司', 'Taipower'], anyText: true },
   { name: '台灣中油', category: '公用事業', domains: ['cpc.com.tw'], keywords: [], aliases: ['台灣中油', '臺灣中油'], anyText: true },
   { name: '遠通電收（ETC）', category: '公用事業', domains: ['fetc.net.tw'], keywords: ['fetc', 'etag'], aliases: ['遠通電收', 'eTag', 'ETC通行費', '高速公路通行費'], anyText: true },
   { name: '全國繳費網（銀行公會）', category: '支付', domains: ['ba.org.tw'], home: 'ebill.ba.org.tw', keywords: [], aliases: ['全國繳費網'], anyText: true },
@@ -47,12 +47,12 @@ export const OFFICIAL_SITES = [
   { name: '華南商業銀行', category: '銀行', domains: ['hncb.com.tw'], keywords: ['hncb'], aliases: ['華南銀行'] },
   { name: '彰化商業銀行', category: '銀行', domains: ['bankchb.com'], keywords: ['bankchb'], aliases: ['彰化銀行'] },
   { name: '上海商業儲蓄銀行', category: '銀行', domains: ['scsb.com.tw'], keywords: ['scsb'], aliases: ['上海商銀', '上海商業儲蓄銀行'] },
-  { name: '台北富邦銀行', category: '銀行', domains: ['fubon.com', 'taipeifubon.com.tw', 'efubon.com.tw', 'fubon.org'], keywords: ['fubon'], aliases: ['台北富邦', '富邦銀行'] }, // efubon 依 Chrome 台灣熱門網站補入
-  { name: '國泰世華銀行', category: '銀行', domains: ['cathaybk.com.tw', 'cathay-cube.com.tw'], keywords: ['cathay'], aliases: ['國泰世華'] }, // CUBE 依 Chrome 台灣熱門網站補入
+  { name: '台北富邦銀行', category: '銀行', domains: ['fubon.com', 'taipeifubon.com.tw', 'efubon.com.tw', 'fubon.org'], keywords: ['fubon'], aliases: ['台北富邦', '富邦銀行', 'Taipei Fubon'] }, // efubon 依 Chrome 台灣熱門網站補入
+  { name: '國泰世華銀行', category: '銀行', domains: ['cathaybk.com.tw', 'cathay-cube.com.tw'], keywords: ['cathay'], aliases: ['國泰世華', 'Cathay United Bank'] }, // CUBE 依 Chrome 台灣熱門網站補入
   { name: '兆豐國際商業銀行', category: '銀行', domains: ['megabank.com.tw'], keywords: ['megabank'], aliases: ['兆豐銀行', '兆豐國際商業銀行'] },
-  { name: '中國信託商業銀行', category: '銀行', domains: ['ctbcbank.com'], keywords: ['ctbc'], aliases: ['中國信託', '中信銀行'] },
-  { name: '玉山銀行', category: '銀行', domains: ['esunbank.com', 'esunbank.com.tw'], keywords: ['esun'], aliases: ['玉山銀行'] },
-  { name: '台新銀行', category: '銀行', domains: ['taishinbank.com.tw', 'richart.tw', 'taishin.com'], keywords: ['taishin', 'richart'], aliases: ['台新銀行', 'Richart'] }, // taishin.com 依 Chrome 台灣熱門網站補入
+  { name: '中國信託商業銀行', category: '銀行', domains: ['ctbcbank.com'], keywords: ['ctbc'], aliases: ['中國信託', '中信銀行', 'CTBC Bank'] },
+  { name: '玉山銀行', category: '銀行', domains: ['esunbank.com', 'esunbank.com.tw'], keywords: ['esun'], aliases: ['玉山銀行', 'E.SUN Bank'] },
+  { name: '台新銀行', category: '銀行', domains: ['taishinbank.com.tw', 'richart.tw', 'taishin.com'], keywords: ['taishin', 'richart'], aliases: ['台新銀行', 'Richart', 'Taishin Bank'] }, // taishin.com 依 Chrome 台灣熱門網站補入
   { name: '永豐銀行', category: '銀行', domains: ['sinopac.com'], home: 'bank.sinopac.com', keywords: ['sinopac'], aliases: ['永豐銀行'] },
   { name: '元大銀行', category: '銀行', domains: ['yuantabank.com.tw'], keywords: ['yuanta'], aliases: ['元大銀行'] },
   { name: '凱基銀行', category: '銀行', domains: ['kgibank.com.tw', 'kgibank.com'], keywords: ['kgibank'], aliases: ['凱基銀行'] }, // kgibank.com 為網路銀行，依 Chrome 台灣熱門網站補入
@@ -110,9 +110,9 @@ export const OFFICIAL_SITES = [
   { name: 'PayPal', category: '支付', domains: ['paypal.com', 'paypal.me'], keywords: ['paypal'], aliases: ['PayPal'], global: true },
 
   // ───────── 電信 ─────────
-  { name: '中華電信', category: '電信', domains: ['cht.com.tw', 'hinet.net', 'emome.net'], keywords: ['hinet', 'cht', 'chunghwatelecom'], aliases: ['中華電信'] },
-  { name: '台灣大哥大', category: '電信', domains: ['taiwanmobile.com'], keywords: ['taiwanmobile'], aliases: ['台灣大哥大'] },
-  { name: '遠傳電信', category: '電信', domains: ['fetnet.net'], keywords: ['fetnet'], aliases: ['遠傳電信'] },
+  { name: '中華電信', category: '電信', domains: ['cht.com.tw', 'hinet.net', 'emome.net'], keywords: ['hinet', 'cht', 'chunghwatelecom'], aliases: ['中華電信', 'Chunghwa Telecom'] },
+  { name: '台灣大哥大', category: '電信', domains: ['taiwanmobile.com'], keywords: ['taiwanmobile'], aliases: ['台灣大哥大', 'Taiwan Mobile'] },
+  { name: '遠傳電信', category: '電信', domains: ['fetnet.net'], keywords: ['fetnet'], aliases: ['遠傳電信', 'Far EasTone'] },
   { name: '亞太電信', category: '電信', domains: ['aptg.com.tw'], keywords: ['aptg'], aliases: ['亞太電信'] },
 
   // ───────── 物流 ─────────
@@ -125,7 +125,7 @@ export const OFFICIAL_SITES = [
   { name: 'momo 購物網', category: '購物', domains: ['momoshop.com.tw'], keywords: ['momoshop'], aliases: ['momo購物', 'momo 購物'] },
   { name: 'PChome 24h 購物', category: '購物', domains: ['pchome.com.tw'], keywords: ['pchome'], stems: ['pchome', 'pc24'], aliases: ['PChome'] },
   { name: 'Yahoo 奇摩', category: '購物', domains: ['yahoo.com'], home: 'tw.yahoo.com', keywords: [], aliases: ['Yahoo奇摩', 'Yahoo 奇摩'], global: true },
-  { name: '樂天市場', category: '購物', domains: ['rakuten.com.tw', 'rakuten.com'], keywords: ['rakuten'], aliases: ['樂天市場'], global: true },
+  { name: '樂天市場', category: '購物', domains: ['rakuten.com.tw', 'rakuten.com', 'rakuten.co.jp', 'rakuten.net'], keywords: ['rakuten'], aliases: ['樂天市場'], global: true },
   { name: '淘寶', category: '購物', domains: ['taobao.com'], keywords: ['taobao'], aliases: ['淘寶'], global: true },
   { name: 'Carousell 旋轉拍賣', category: '購物', domains: ['carousell.com'], home: 'tw.carousell.com', keywords: ['carousell'], aliases: ['旋轉拍賣', 'Carousell'], global: true },
   { name: 'Pinkoi', category: '購物', domains: ['pinkoi.com'], keywords: ['pinkoi'], aliases: ['Pinkoi'], global: true },
@@ -143,7 +143,7 @@ export const OFFICIAL_SITES = [
   { name: '全聯福利中心', category: '購物', domains: ['pxmart.com.tw'], keywords: ['pxmart'], aliases: ['全聯福利中心'] },
   { name: '好市多 Costco', category: '購物', domains: ['costco.com.tw'], keywords: ['costco'], aliases: ['好市多', 'Costco'], global: true },
   { name: '屈臣氏', category: '購物', domains: ['watsons.com.tw'], keywords: [], aliases: ['屈臣氏'], global: true },
-  { name: '康是美', category: '購物', domains: ['cosmed.com.tw'], keywords: [], aliases: ['康是美'] },
+  { name: '康是美', category: '購物', domains: ['cosmed.com.tw'], keywords: [], aliases: ['康是美'], generic: true },
   { name: '誠品', category: '購物', domains: ['eslite.com'], keywords: ['eslite'], aliases: ['誠品'] },
   { name: '拓元售票', category: '購物', domains: ['tixcraft.com'], keywords: ['tixcraft'], aliases: ['拓元'] },
   { name: 'KKTIX', category: '購物', domains: ['kktix.com', 'kktix.cc'], keywords: ['kktix'], aliases: ['KKTIX'] },
@@ -462,7 +462,46 @@ export const OFFICIAL_SITES = [
   { name: 'Shopify', category: '網路服務', domains: ['shopify.com'], keywords: ['shopify'], aliases: [], global: true },
   { name: 'Wix', category: '網路服務', domains: ['wix.com'], keywords: [], aliases: [], global: true },
   { name: 'Cloudflare', category: '網路服務', domains: ['cloudflare.com'], keywords: ['cloudflare'], aliases: [], global: true },
-  { name: 'Yahoo 信箱', category: '網路服務', domains: ['yahoo.co.jp'], keywords: [], aliases: [], global: true },
+
+  // ───────── 日本（每個網域都出現在 2026/9 Chrome 日本熱門網站）─────────
+  { name: '日本国税庁（e-Tax）', category: '政府機關', domains: ['nta.go.jp'], keywords: [], aliases: ['国税庁', 'e-Tax', 'e‑Tax', '国税電子申告', '税務署', '確定申告書等作成コーナー'], anyText: true },
+  { name: '日本年金機構', category: '政府機關', domains: ['nenkin.go.jp'], keywords: [], aliases: ['日本年金機構', 'ねんきんネット'], anyText: true },
+  { name: 'マイナポータル（デジタル庁）', category: '政府機關', domains: ['myna.go.jp', 'digital.go.jp'], generic: ['digital.go.jp'], keywords: [], aliases: ['マイナポータル', 'マイナポイント', 'デジタル庁'], anyText: true },
+  { name: '日本警察庁', category: '政府機關', domains: ['npa.go.jp'], keywords: [], aliases: ['警察庁'], anyText: true },
+  { name: '日本総務省', category: '政府機關', domains: ['soumu.go.jp'], keywords: [], aliases: ['総務省'], anyText: true },
+  { name: '日本厚生労働省', category: '政府機關', domains: ['mhlw.go.jp'], keywords: [], aliases: ['厚生労働省'], anyText: true },
+  { name: '日本金融庁', category: '政府機關', domains: ['fsa.go.jp'], keywords: [], aliases: ['金融庁'], anyText: true },
+  { name: '日本郵便', category: '物流', domains: ['japanpost.jp'], keywords: ['japanpost'], aliases: ['日本郵便', 'ゆうパック', 'Japan Post'], anyText: true },
+  { name: 'ヤマト運輸（クロネコヤマト）', category: '物流', domains: ['kuronekoyamato.co.jp'], keywords: ['kuronekoyamato'], aliases: ['ヤマト運輸', 'クロネコヤマト'], anyText: true },
+  { name: '佐川急便', category: '物流', domains: ['sagawa-exp.co.jp'], keywords: ['sagawa'], aliases: ['佐川急便'], anyText: true },
+  { name: '西濃運輸', category: '物流', domains: ['seino.co.jp'], keywords: [], aliases: ['西濃運輸'] },
+  { name: '三井住友カード', category: '銀行', domains: ['smbc-card.com', 'vpass.ne.jp', 'vpassticket.jp'], keywords: ['smbccard'], aliases: ['三井住友カード', 'Vpass'] },
+  { name: '三井住友銀行', category: '銀行', domains: ['smbc.co.jp'], keywords: ['smbc'], aliases: ['三井住友銀行'] },
+  { name: '三菱UFJ（銀行・ニコス）', category: '銀行', domains: ['mufg.jp', 'mufgcard.com'], keywords: ['mufg'], aliases: ['三菱UFJ銀行', '三菱UFJニコス', 'MUFG'] },
+  { name: 'みずほ銀行', category: '銀行', domains: ['mizuhobank.co.jp', 'mizuho-sc.com', 'mizuho-fg.co.jp'], keywords: ['mizuho'], aliases: ['みずほ銀行'] },
+  { name: 'りそな銀行', category: '銀行', domains: ['resonabank.co.jp', 'resona-gr.co.jp', 'resona-tb.co.jp', 'resonacard.co.jp'], keywords: ['resona'], aliases: ['りそな銀行'] },
+  { name: 'ゆうちょ銀行', category: '銀行', domains: ['jp-bank.japanpost.jp'], keywords: ['yucho', 'jpbank'], aliases: ['ゆうちょ銀行'], anyText: true },
+  { name: 'イオンカード', category: '銀行', domains: ['aeon.co.jp', 'aeon.com'], keywords: [], aliases: ['イオンカード', 'イオン銀行'] },
+  { name: 'エポスカード', category: '銀行', domains: ['eposcard.co.jp'], keywords: ['eposcard'], aliases: ['エポスカード'] },
+  { name: 'JCB（日本）', category: '銀行', domains: ['jcb.co.jp'], keywords: ['myjcb'], aliases: ['JCBカード', 'MyJCB'] },
+  { name: 'セゾンカード', category: '銀行', domains: ['saisoncard.co.jp'], keywords: [], aliases: ['セゾンカード'] },
+  { name: '楽天カード・楽天銀行', category: '銀行', domains: ['rakuten-card.co.jp', 'rakuten-bank.co.jp', 'rakuten-bank.net'], keywords: [], aliases: ['楽天カード', '楽天銀行'] },
+  { name: 'PayPay', category: '支付', domains: ['paypay.ne.jp', 'paypay-bank.co.jp', 'paypay-card.co.jp', 'paypay-sec.co.jp'], keywords: ['paypay'], aliases: ['PayPay'] },
+  { name: 'SBI証券', category: '證券金融', domains: ['sbisec.co.jp'], keywords: ['sbisec'], aliases: ['SBI証券'] },
+  { name: '野村證券', category: '證券金融', domains: ['nomura.co.jp'], keywords: [], aliases: ['野村證券'] },
+  { name: '東京電力', category: '公用事業', domains: ['tepco.co.jp'], keywords: ['tepco'], aliases: ['東京電力'] },
+  { name: '関西電力', category: '公用事業', domains: ['kepco.co.jp', 'kepco.jp'], keywords: ['kepco'], aliases: ['関西電力'] },
+  { name: '東京ガス', category: '公用事業', domains: ['tokyo-gas.co.jp'], keywords: [], aliases: ['東京ガス'] },
+  { name: 'NTTドコモ', category: '電信', domains: ['docomo.ne.jp'], keywords: ['docomo'], aliases: ['ドコモ', 'docomo'] },
+  { name: 'au（KDDI）', category: '電信', domains: ['au.com', 'kddi.com'], keywords: ['kddi'], aliases: ['KDDI', 'au PAY'] },
+  { name: 'SoftBank', category: '電信', domains: ['softbank.jp', 'softbankbb.co.jp'], keywords: ['softbank'], aliases: ['ソフトバンク'] },
+  { name: 'ETC利用照会サービス', category: '公用事業', domains: ['etc-meisai.jp'], keywords: ['etcmeisai'], aliases: ['ETC利用照会'], anyText: true },
+  { name: 'NEXCO東日本', category: '公用事業', domains: ['e-nexco.co.jp'], keywords: ['nexco'], aliases: ['NEXCO東日本'], anyText: true },
+  { name: 'NEXCO中日本', category: '公用事業', domains: ['c-nexco.co.jp'], keywords: [], aliases: ['NEXCO中日本'], anyText: true },
+  { name: 'JR東日本（えきねっと）', category: '交通旅遊', domains: ['jreast.co.jp', 'eki-net.com'], keywords: ['ekinet', 'jreast'], aliases: ['えきねっと', 'JR東日本', 'モバイルSuica'] },
+  { name: 'メルカリ', category: '購物', domains: ['mercari.com'], keywords: ['mercari'], aliases: ['メルカリ'], global: true },
+  { name: 'ZOZOTOWN', category: '購物', domains: ['zozo.jp'], keywords: ['zozotown'], aliases: ['ZOZOTOWN'] },
+  { name: 'Yahoo! JAPAN', category: '網路服務', domains: ['yahoo.co.jp'], keywords: [], aliases: ['Yahoo! JAPAN', 'ヤフオク'], global: true },
 ];
 
 // 官方平台上「任何人都能建立內容」的地方：網域是真的，但內容不代表官方。
@@ -501,6 +540,7 @@ export const BENEFIT_THEMES = [
   ...GOV_PROGRAMS, '中獎', '抽獎', '抽中', '恭喜您', '恭喜你', '幸運轉盤', '獲得獎品', '獎金', '獎品', '免費領取',
   '限時領取', '領取資格', '點數即將到期', '點數到期', '點數兌換', '紅利點數', '紅利兌換', '里程即將到期', '到期失效',
   '回饋金', '補助款', '退費', '發票中獎', '領獎',
+  '還付金', '還付', '給付金', '当選', 'ポイント失効', 'refund', 'reward', 'prize', 'gift card', 'congratulations',
 ];
 
 // 詐騙繳費頁常見名目（刻意不放「逾期」「未繳」「包裹」這類一般商店也常用的字，降低誤判）
@@ -508,6 +548,11 @@ export const PAYMENT_THEMES = [
   '停車費', '停車繳費', '路邊停車', '逾期未繳', '尚未繳納', '補繳', '欠費', '滯納金', '罰單', '罰鍰', '交通違規',
   '通行費', 'eTag', '重新投遞', '投遞失敗', '地址不完整', '地址有誤', '包裹滯留', '關稅', '退稅', '稅款',
   '健保費', '電費', '水費', '瓦斯費', '帳戶凍結', '帳戶異常', '解除分期', '驗證身分', '驗證身份', '保證金', '解凍金',
+  '退款', '重複繳款', '重複扣款', '重複付款', '帳單異常',
+  // 日文
+  '未納', '未払い', '滞納', '差し押さえ', '再配達', '配達できませんでした', '不在通知', '利用停止', '料金のお支払い', '本人確認',
+  // 英文
+  'unpaid', 'overdue', 'outstanding balance', 'toll', 'redelivery', 'delivery failed', 'package could not be delivered', 'account suspended',
 ];
 
 // 「要你付錢」的文字線索：轉帳／匯款指示、超商代碼、加密貨幣

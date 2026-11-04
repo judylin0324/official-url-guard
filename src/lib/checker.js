@@ -89,7 +89,7 @@ export function buildContext({ sites = OFFICIAL_SITES, userTrusted = [], userBlo
     for (const st of site.stems || []) stems.push({ stem: st, site, domain: site.domains[0] });
     for (const alias of site.aliases || []) {
       const scope = site.anyText ? 'body' : TITLE_ONLY_CATEGORIES.has(site.category) ? 'title' : 'identity';
-      claims.push({ alias: normText(alias), display: alias, site, scope });
+      claims.push({ alias: normText(alias), display: alias, site, scope, re: aliasRegex(alias) });
     }
   }
   const brandTlds = new Map();
@@ -110,6 +110,18 @@ export function buildContext({ sites = OFFICIAL_SITES, userTrusted = [], userBlo
     lineIds: lineIds instanceof Set ? lineIds : new Set(lineIds.map(normalizeLineId).filter(Boolean)),
     labelModel: useModel ? LABEL_MODEL : null,
   };
+}
+
+/** 英文名稱（Chunghwa Telecom、E.SUN Bank）建立可容忍「字之間混入 1～3 個字元」的比對，抓 lChunghwalTelecom 這類拆字 */
+function aliasRegex(alias) {
+  const words = alias.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (!/^[\x20-\x7e]+$/.test(alias) || !words.length) return null;
+  const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (words.length === 1) return words[0].length >= 4 ? new RegExp(`(?<![a-z])${esc(words[0])}(?![a-z])`) : null;
+  // 每個字至少 3 個字母才做容錯比對，避免「au PAY」配到 autopay
+  if (words.some((w) => w.length < 3)) return null;
+  // 前後不加字界：拆字詐騙會把字母黏在名稱前後（lChunghwalTelecomlCo）
+  return new RegExp(words.map(esc).join('([^\\n]{0,3}?)'));
 }
 
 function officialUrl(site, domain) {
@@ -139,6 +151,8 @@ function govLabel(host) {
   if (host.endsWith('.gov.tw') || host === 'gov.tw') return '中華民國政府機關網域（.gov.tw）';
   if (host.endsWith('.edu.tw')) return '教育／學術機構網域（.edu.tw）';
   if (host.endsWith('.mil.tw')) return '國軍網域（.mil.tw）';
+  if (host.endsWith('.go.jp')) return '日本政府機關網域（.go.jp）';
+  if (host.endsWith('.lg.jp')) return '日本地方政府網域（.lg.jp）';
   return null;
 }
 
@@ -231,12 +245,89 @@ function levelFor(score) {
 
 // ───────────────────────── 網址判斷 ─────────────────────────
 
+// ───────────────────────── 轉址與電子報追蹤連結 ─────────────────────────
+
+// 電子報、行銷信件的點擊追蹤服務：點了會先經過它們，再轉到真正的網站，從連結本身看不出目的地
+const ESP_TRACKERS = {
+  'benchurl.com': 'Benchmark Email', 'list-manage.com': 'Mailchimp', 'mandrillapp.com': 'Mailchimp', 'sendgrid.net': 'SendGrid',
+  'hubspotlinks.com': 'HubSpot', 'mailgun.org': 'Mailgun', 'sparkpostmail.com': 'SparkPost', 'exacttarget.com': 'Salesforce',
+  'rs6.net': 'Constant Contact', 'createsend1.com': 'Campaign Monitor', 'cmail19.com': 'Campaign Monitor', 'cmail20.com': 'Campaign Monitor',
+  'mjt.lu': 'Mailjet', 'sendibt3.com': 'Brevo', 'sendibm1.com': 'Brevo', 'awstrack.me': 'Amazon SES', 'mlsend.com': 'MailerLite',
+  'klclick.com': 'Klaviyo', 'klclick1.com': 'Klaviyo', 'klclick2.com': 'Klaviyo', 'emltrk.com': 'Emailtrack', 'mailtrack.io': 'Mailtrack',
+  'mailchi.mp': 'Mailchimp', 'eepurl.com': 'Mailchimp', 'getresponse.com': 'GetResponse', 'acemlna.com': 'ActiveCampaign',
+};
+// 確定會「轉址」的服務：外層網域是官方的，參數裡的網址才是真正的目的地。
+// 只拆這些服務；一般網站帶 ?url= 參數（例如回報表單、網址檢測網站）不是轉址，不能拆。
+const REDIRECTORS = [
+  { host: /(^|\.)safelinks\.protection\.outlook\.com$/, params: ['url'] },
+  { host: /(^|\.)google\.[a-z.]+$/, path: /^\/url$/, params: ['q', 'url'] },
+  { host: /^(l|lm)\.facebook\.com$/, path: /^\/l\.php$/, params: ['u'] },
+  { host: /^l\.instagram\.com$/, params: ['u'] },
+  { host: /(^|\.)linkedin\.com$/, path: /^\/redir\/redirect/, params: ['url'] },
+  { host: /(^|\.)youtube\.com$/, path: /^\/redirect$/, params: ['q'] },
+  { host: /^steamcommunity\.com$/, path: /^\/linkfilter\//, params: ['url', 'u'] },
+  { host: /^slack-redir\.net$/, params: ['url'] },
+  { host: /^(www\.)?threads\.(net|com)$/, path: /^\/redirect/, params: ['u', 'url'] },
+];
+
+/** 拆出轉址連結裡真正的目的地（Outlook Safe Links、Google 轉址、Facebook 外部連結、Proofpoint…） */
+export function unwrapUrl(href) {
+  let u;
+  try { u = new URL(href); } catch { return null; }
+  const host = u.hostname.toLowerCase();
+  if (/(^|\.)urldefense\.(com|proofpoint\.com)$/.test(host)) {
+    const v3 = href.match(/__(https?:\/\/.+?)__;/);
+    if (v3) return v3[1];
+    const v2 = u.searchParams.get('u');
+    if (v2) { try { return decodeURIComponent(v2.replace(/-/g, '%').replace(/_/g, '/')); } catch { return null; } }
+  }
+  for (const r of REDIRECTORS) {
+    if (!r.host.test(host) || (r.path && !r.path.test(u.pathname))) continue;
+    for (const k of r.params) {
+      const val = u.searchParams.get(k);
+      if (val && /^https?:\/\/[^/]+\.[a-z]{2,}/i.test(val)) return val;
+    }
+  }
+  return null;
+}
+
+const SEVERITY = { invalid: 0, skip: 0, official: 1, gov: 1, trusted: 1, unknown: 2, platform: 3, caution: 4, danger: 5 };
+
 /**
  * @param {string} raw 網址
  * @param {object} ctx buildContext() 的結果
  * @param {{domainAgeDays?: number}} extra 額外資訊（例如網域註冊天數）
  */
 export function assessUrl(raw, ctx, extra = {}) {
+  const v = assessUrlCore(raw, ctx, extra);
+  if (v.level === 'invalid' || v.level === 'skip' || (extra.depth || 0) >= 3) return v;
+  // 轉址連結：外層可能是官方網域（Outlook、Google），真正的目的地才是重點
+  const inner = unwrapUrl(v.url);
+  if (inner) {
+    const iv = assessUrl(inner, ctx, { ...extra, depth: (extra.depth || 0) + 1 });
+    if (iv.level !== 'invalid' && iv.host !== v.host) {
+      const note = { text: `這是 ${v.displayHost} 的轉址連結，點了實際會連到 ${iv.displayHost}`, weight: 0 };
+      return SEVERITY[iv.level] >= SEVERITY[v.level]
+        ? { ...iv, wrapper: v.url, reasons: [...iv.reasons.filter((r) => r.weight > 0), note, ...iv.reasons.filter((r) => r.weight === 0)] }
+        : { ...v, reasons: [...v.reasons, note] };
+    }
+  }
+  // 電子報點擊追蹤連結
+  const esp = ESP_TRACKERS[v.registrable];
+  if (esp && !['official', 'gov', 'trusted', 'danger'].includes(v.level)) {
+    const reasons = [{ text: `這是電子報點擊追蹤連結（${esp}），看不到最後會連到哪裡`, weight: 15 }, ...v.reasons.filter((r) => r.weight > 0)];
+    let u;
+    try { u = new URL(v.url); } catch { /* 已檢查過 */ }
+    if (u && [...u.searchParams.keys()].some((k) => /^(e|email|mail|uid|recipient|subscriber)$/i.test(k))) {
+      reasons.push({ text: '連結帶著識別你信箱的代碼，點開會讓寄件人知道這個信箱有人在看', weight: 0 });
+    }
+    const score = Math.min(100, v.score + 15);
+    return { ...v, tracker: esp, score, level: levelFor(score), reasons };
+  }
+  return v;
+}
+
+function assessUrlCore(raw, ctx, extra = {}) {
   let u;
   try {
     u = new URL(raw);
@@ -316,7 +407,7 @@ export function assessUrl(raw, ctx, extra = {}) {
   // 網域本身只由 tw、fine、point 這類通用字組成（例：tw-fine.cyou），代表它沒有自己的品牌，前段的品牌名就更可疑
   const genericRegistrable = labelTokens.every((t) => BRAND_AFFIX.test(t) || URL_BAIT_WORDS.has(t));
   // 便宜後綴上的隨機網域，前段又放品牌名（newebpay658.tw-0kj.shop）也一樣可疑
-  const subBrandWeight = genericRegistrable || (TLD_RISK[tld] || 0) >= 15 ? 45 : 25;
+  const subBrandWeight = (genericRegistrable && (labelTokens.includes('tw') || (TLD_RISK[tld] || 0) >= 15)) || (TLD_RISK[tld] || 0) >= 15 ? 45 : 25;
 
   // 6a. 冒充政府網域（.com.tw 的「tw」是後綴本身，不算）
   const regGovTokens = [...labelTokens, ...(p.suffix === 'tw' ? ['tw'] : [])];
@@ -380,7 +471,8 @@ export function assessUrl(raw, ctx, extra = {}) {
       setImp(70, `和「${name}」官方網址 ${L.domain} 幾乎一樣，只是換了長得像的字元或加了符號`, L.site, L.domain);
       continue;
     }
-    if (isCommonWord) continue;
+    // 混有日文、中文字的國際化網域（playstation公式.jp），逐字比對沒有意義
+    if (isCommonWord || /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(uLabel)) continue;
     const len = L.skel.length;
     if (Math.abs(skel.length - len) > 2) continue;
     const dist = editDistance(skel, L.skel, 2);
@@ -530,8 +622,11 @@ export function assessUrl(raw, ctx, extra = {}) {
 
 // ───────────────────────── 網頁內容判斷 ─────────────────────────
 
+// 看不見的字元：零寬空白、零寬連接、字元連接、BOM、軟連字號…詐騙信常塞在字中間躲過濾
+export const INVISIBLE_RE = /[\u200b-\u200f\u2060-\u2064\ufeff\u00ad\u180e\u034f]/g;
+
 export function normText(s) {
-  return String(s || '').replace(/[​-‏⁠﻿]/g, '').replace(/\s+/g, '').toLowerCase();
+  return String(s || '').replace(INVISIBLE_RE, '').replace(/\s+/g, '').toLowerCase();
 }
 
 function findAny(haystack, words) {
@@ -764,19 +859,35 @@ export function extractUrls(text) {
   return [...new Set(out)].slice(0, 10);
 }
 
-// 訊息要你在連結裡做什麼（前五項是「秘密」，正規機構不會用簡訊連結跟你要）
+// 訊息要你在連結裡做什麼（第三欄 true＝「秘密」，正規機構不會用簡訊或信件連結跟你要）
 const MSG_ASKS = [
-  [/信用卡|卡號|安全碼|有效期限/, '信用卡資料', true],
-  [/驗證碼|簡訊碼|OTP|認證碼|動態密碼|復原碼/i, '簡訊驗證碼', true],
-  [/網銀|網路銀行|綁定.{0,4}(帳戶|銀行|帳號)|銀行帳號|帳戶資料|登入.{0,3}(銀行|帳戶)/, '銀行帳戶', true],
-  [/密碼|帳號與密碼|登入.{0,8}帳號/, '帳號密碼', true],
-  [/身分證|身份證/, '身分證字號', true],
-  [/遠端|AnyDesk|TeamViewer|安裝.{0,8}(程式|軟體|工具|APP|App|app|APK)/i, '安裝遠端或不明程式', true],
-  [/匯款|轉帳|匯入|付款|支付|繳納|繳費|手續費|運費|驗證費|保證金|儲值/, '付款', false],
+  [/信用卡|卡號|安全碼|有效期限|クレジットカード|カード番号|セキュリティコード|credit card|card number|\bcvv\b/gi, '信用卡資料', true],
+  [/驗證碼|簡訊碼|OTP|認證碼|動態密碼|復原碼|認証コード|確認コード|ワンタイムパスワード|verification code|one-time (pass)?code/gi, '簡訊驗證碼', true],
+  [/網銀|網路銀行|綁定.{0,4}(帳戶|銀行|帳號)|銀行帳號|帳戶資料|登入.{0,3}(銀行|帳戶)|口座番号|暗証番号|ネットバンキング|bank account/gi, '銀行帳戶', true],
+  [/密碼|帳號與密碼|登入.{0,8}帳號|パスワード|password/gi, '帳號密碼', true],
+  [/身分證|身份證|マイナンバー|social security/gi, '身分證字號', true],
+  [/遠端|AnyDesk|TeamViewer|安裝.{0,8}(程式|軟體|工具|APP|App|app|APK)|遠隔操作|リモート|remote access/gi, '安裝遠端或不明程式', true],
+  [/(請|立即|盡速|儘速|馬上|務必)(盡速|儘速|立即|馬上|務必)?(於[^，。\n]{0,10}?)?(完成)?(付款|繳費|繳納|匯款|轉帳|支付|儲值)|(點此|點擊|前往)(付款|繳費|繳納)|(需|須|必須)(支付|繳納|付)[^，。\n]{0,6}(手續費|運費|驗證費|保證金|費用)|お支払いください|お振込みください|振り込んで|pay now|make a payment/gi, '付款', false],
 ];
-const URGENCY = /今天|今日|今晚|明天|立即|立刻|馬上|盡速|儘速|限時|截止|只到|逾期|失效|停權|凍結|分鐘內|小時內|\d+\s*(分鐘|小時)|最後|即將/;
-const LURE = /恭喜|免費|獲得|中獎|抽中|回饋|紅利|兌換|領取|退費|退款|補助|升級|優惠|禮物|獎金|加碼|收益|獲利/;
-const THREAT = /異常|停權|凍結|扣款|自動續費|續費|罰|違規|吊扣|法院|地檢|警察|吊銷|取消資格|無法應試|款項會被/;
+// 「請勿提供密碼」「暗証番号を求めることは一切ありません」這類否定句不算要求
+const NEG_BEFORE = /(請勿|請不要|不要|切勿|勿|不會|絕不|絕對不會|不得|never|do not|don't|will not|won't)[^。！？\n]{0,20}$/i;
+const NEG_AFTER_JA = /^[^。\n]{0,24}(求めることは|お尋ねすることは|ことはありません|ことは一切|しません|いたしません)/;
+function asksFor(re, text) {
+  re.lastIndex = 0;
+  let m;
+  while ((m = re.exec(text))) {
+    const before = text.slice(Math.max(0, m.index - 26), m.index);
+    const after = text.slice(m.index, m.index + 40);
+    if (!NEG_BEFORE.test(before) && !NEG_AFTER_JA.test(after)) return true;
+  }
+  return false;
+}
+const URGENCY = /今天|今日|今晚|明天|立即|立刻|馬上|盡速|儘速|限時|截止|只到|逾期|失效|停權|凍結|分鐘內|小時內|\d+\s*(分鐘|小時)|最後|即將|本日中|至急|直ちに|期限|以内|今すぐ|immediately|urgent|within \d+ hours/i;
+const LURE = /恭喜|免費|獲得|中獎|抽中|回饋|紅利|兌換|領取|退費|退款|補助|升級|優惠|禮物|獎金|加碼|收益|獲利|還付|給付|当選|プレゼント|無料|refund|reward|free|congratulations/i;
+const THREAT = /異常|停權|凍結|扣款|自動續費|續費|罰|違規|吊扣|法院|地檢|警察|吊銷|取消資格|無法應試|款項會被|停止|差し押さえ|法的措置|suspend|locked|unusual activity/i;
+// 免費信箱：真正的公司、政府不會用這些信箱寄正式通知
+const FREE_MAIL = new Set(['gmail.com', 'yahoo.com', 'yahoo.com.tw', 'yahoo.co.jp', 'hotmail.com', 'outlook.com', 'live.com', 'msn.com', 'icloud.com',
+  'me.com', 'aol.com', 'proton.me', 'protonmail.com', 'gmx.com', 'mail.com', 'qq.com', '163.com', '126.com', 'yandex.com', 'mail.ru', 'naver.com']);
 
 function messageNotesFor(text, norm, guarantee, themes) {
   const notes = [];
@@ -794,24 +905,67 @@ function messageNotesFor(text, norm, guarantee, themes) {
   }
   if (guarantee.length) notes.push(`訊息宣稱「${guarantee[0]}」，合法投資不會保證獲利，很可能是假投資`);
   if (/(加|私|密).{0,4}(LINE|line|賴)|LINE\s*ID|@[a-z0-9._-]{3,}/i.test(text) && (guarantee.length || themes.length)) notes.push('訊息要你加 LINE 帳號私下聯絡，這是詐騙常見手法');
-  return [...new Set(notes)];
+  return notes;
+}
+
+/** 找出寄件人信箱：優先看「From／寄件者／差出人」那一行，其次是 options.sender */
+function findSender(text, given) {
+  if (given && given.address) return { name: given.name || '', address: String(given.address).toLowerCase() };
+  const line = text.match(/^\s*(?:from|寄件者|寄件人|發件人|送件者|差出人|送信者)\s*[:：]\s*(.+)$/im);
+  const m = line && line[1].match(/([\w.+-]+)@((?:[\w-]+\.)+[a-z]{2,})/i);
+  return m ? { name: line[1].replace(/<.*?>/g, '').trim(), address: `${m[1]}@${m[2]}`.toLowerCase() } : null;
 }
 
 /**
- * 判斷一則簡訊／LINE 訊息：訊息「自稱是誰」和連結的「實際網址」是否一致，以及要你在連結裡做什麼。
- * @returns {{ items: object[], noUrl: boolean, messageNotes: string[] }}
+ * 判斷一則簡訊、LINE 訊息或 Email：訊息「自稱是誰」和連結（與寄件人）的「實際網域」是否一致，以及要你在連結裡做什麼。
+ * @param {string} text 訊息全文
+ * @param {object} ctx
+ * @param {{ links?: string[], sender?: { name?: string, address?: string } }} options 網頁信箱模式會另外給連結的真正網址與寄件人
+ * @returns {{ items: object[], noUrl: boolean, messageNotes: string[], claim: string|null, sender: object|null }}
  */
-export function assessMessage(text, ctx) {
-  const norm = normText(text);
-  let claim = null;
-  for (const c of ctx.claims) if (c.alias && norm.includes(c.alias)) { claim = c; break; }
+export function assessMessage(text, ctx, options = {}) {
+  const raw = String(text || '');
+  // 藏在字中間的看不見字元（Andr​oid、処‍理）
+  const hiddenChars = (raw.match(/[\p{L}\p{N}][​-‏⁠-⁤﻿­᠎͏]+[\p{L}\p{N}]/gu) || []).length;
+  const clean = raw.replace(INVISIBLE_RE, '');
+  const lower = clean.toLowerCase();
+  const norm = normText(clean);
+
+  // 自稱是誰（英文名稱容許混入字元：lChunghwalTelecom）
+  let claim = null, obfuscated = null;
+  for (const c of ctx.claims) {
+    if (c.re) {
+      const m = c.re.exec(lower);
+      if (m) {
+        claim = c;
+        const gaps = m.slice(1).filter((g) => g !== undefined);
+        if (gaps.some((g) => /[a-z0-9]/.test(g))) obfuscated = clean.slice(m.index, m.index + m[0].length + 2).trim();
+        break;
+      }
+    } else if (c.alias && norm.includes(c.alias)) { claim = c; break; }
+  }
   const gov = findAny(norm, GOV_ALIASES)[0] || findAny(norm, GOV_PROGRAMS)[0] || null;
   const themes = [...findAny(norm, PAYMENT_THEMES), ...findAny(norm, BENEFIT_THEMES)];
   const guarantee = findAny(norm, INVESTMENT_GUARANTEE);
-  const asks = MSG_ASKS.filter(([re]) => re.test(text));
+  const asks = MSG_ASKS.filter(([re]) => asksFor(re, clean));
   const secrets = asks.filter(([, , secret]) => secret).map(([, label]) => label);
-  const pressure = [URGENCY, LURE, THREAT].filter((re) => re.test(text)).length > 0;
-  const urls = extractUrls(text);
+  const pressure = [URGENCY, LURE, THREAT].filter((re) => re.test(clean)).length > 0;
+
+  // 寄件人
+  let sender = findSender(clean, options.sender);
+  if (sender) {
+    const domain = sender.address.split('@')[1];
+    const sv = assessUrl('https://' + domain + '/', ctx);
+    const free = FREE_MAIL.has(domain);
+    const claimOk = claim && claim.site.domains.some((d) => domain === d || domain.endsWith('.' + d));
+    let problem = null;
+    if (claim && !claimOk) problem = free ? `用免費信箱（${domain}）自稱「${claim.display}」，正規機構不會這樣寄信` : `寄件人網域 ${domain} 不是「${claim.site.name}」的官方網域（官方是 ${claim.site.domains[0]}）`;
+    else if (gov && !['gov', 'official'].includes(sv.level)) problem = `以「${gov}」名義寄信，寄件人網域 ${domain} 卻不是政府網域`;
+    else if (sv.level === 'danger') problem = `寄件人網域 ${domain} 本身就很可疑：${sv.reasons[0] && sv.reasons[0].text}`;
+    sender = { ...sender, domain, level: sv.level, free, problem };
+  }
+
+  const urls = [...new Set([...extractUrls(clean), ...(options.links || []).filter((h) => /^https?:\/\//i.test(h))])].slice(0, 15);
   const items = urls.map((u) => {
     const v = assessUrl(u, ctx);
     if (['official', 'gov', 'trusted', 'skip', 'invalid'].includes(v.level)) {
@@ -822,7 +976,11 @@ export function assessMessage(text, ctx) {
     }
     const extra = [];
     let imp = v.impersonating;
-    if (claim) {
+    if (claim && v.tracker) {
+      // 正規公司也會用電子報服務寄信，所以只提醒；有其他線索才升為危險
+      extra.push({ weight: 50, text: `訊息自稱「${claim.display}」，但連結是電子報追蹤連結，看不到最後會連到哪裡。請直接到「${claim.site.name}」官方網站或 App 查詢（官方是 ${claim.site.domains[0]}）` });
+      imp = { name: claim.site.name, domain: claim.site.domains[0], url: officialUrl(claim.site) };
+    } else if (claim) {
       extra.push({ weight: 85, text: `訊息自稱「${claim.display}」，但連結 ${v.displayHost} 不是「${claim.site.name}」的官方網址（官方是 ${claim.site.domains[0]}）` });
       imp = { name: claim.site.name, domain: claim.site.domains[0], url: officialUrl(claim.site) };
     } else if (gov) {
@@ -832,17 +990,28 @@ export function assessMessage(text, ctx) {
       extra.push({ weight: 50, text: `訊息以「${themes.slice(0, 2).join('、')}」為由要你點連結，但連結不在官方清單中` });
     }
     if (secrets.length && pressure) {
-      extra.push({ weight: 65, text: `訊息要你點連結後提供${secrets.join('、')}，還用時間限制、好處或停權來催你。正規機構不會用簡訊連結跟你要這些。` });
+      extra.push({ weight: 65, text: `訊息要你點連結後提供${secrets.join('、')}，還用時間限制、好處或停權來催你。正規機構不會用簡訊或信件連結跟你要這些。` });
     } else if (secrets.length) {
       extra.push({ weight: 45, text: `訊息要你點連結後提供${secrets.join('、')}。請改從官方 App 或自己輸入官方網址進入確認。` });
     } else if (asks.length && pressure) {
       extra.push({ weight: 35, text: '訊息要你點連結付款，還限時催促。請改從官方 App 或自己輸入官方網址確認帳單。' });
     }
+    const refund = themes.find((t) => /還付|退款|退費|退稅|給付|refund/i.test(t));
+    if (refund) extra.push({ weight: claim || gov ? 25 : 35, text: `以「${refund}」為由要你點連結確認。真正的退稅、退款會直接退回原付款方式或帳戶，不需要你點信件或簡訊裡的連結` });
+    else if (claim && themes.length && v.tracker) extra.push({ weight: 25, text: `以「${themes[0]}」為由要你點追蹤連結確認資料` });
+    if (obfuscated) extra.push({ weight: 30, text: `寄件人或內文把「${claim.display}」拆開、混入字元（${obfuscated}），這是躲過垃圾信過濾的手法` });
+    if (hiddenChars) extra.push({ weight: 30, text: `內文的字中間藏了 ${hiddenChars} 處看不見的字元，這是躲過垃圾信過濾的手法，正規通知不會這樣做` });
+    if (sender && sender.problem) extra.push({ weight: 40, text: sender.problem });
     if (guarantee.length) extra.push({ weight: 60, text: `訊息宣稱「${guarantee[0]}」。合法投資不會保證獲利，這是假投資常見話術` });
     if (!extra.length) return v;
     const ws = extra.map((e) => e.weight).sort((x, y) => y - x);
-    const score = Math.min(100, v.score + ws[0] + 0.5 * ws.slice(1).reduce((x, y) => x + y, 0));
+    const score = Math.min(100, Math.round(v.score + ws[0] + 0.5 * ws.slice(1).reduce((x, y) => x + y, 0)));
     return { ...v, score, level: levelFor(score), impersonating: imp, reasons: [...extra, ...v.reasons.filter((r) => r.weight > 0)].sort((x, y) => y.weight - x.weight) };
   });
-  return { items, noUrl: !urls.length, messageNotes: messageNotesFor(text, norm, guarantee, themes), claim: claim ? claim.site.name : gov };
+
+  const notes = messageNotesFor(clean, norm, guarantee, themes);
+  if (hiddenChars) notes.unshift(`內文藏了 ${hiddenChars} 處看不見的字元（例如「Andr​oid」看起來正常，其實中間夾了零寬字元），這是詐騙信躲過濾的手法。`);
+  if (obfuscated) notes.unshift(`寄件人或內文把「${claim.display}」拆開、混入字元（${obfuscated}），這是詐騙信躲過濾的手法。`);
+  if (sender && sender.problem) notes.unshift(sender.problem);
+  return { items, noUrl: !urls.length, messageNotes: [...new Set(notes)], claim: claim ? claim.site.name : gov, sender };
 }

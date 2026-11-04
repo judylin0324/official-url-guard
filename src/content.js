@@ -437,6 +437,104 @@
     }
   }
 
+  // ───────── 網頁信箱：開信時檢查寄件人、內文與連結 ─────────
+  const pick = (root, sel) => (root && root.querySelector(sel)) || null;
+  const emailFrom = (el, attrs) => {
+    if (!el) return null;
+    for (const a of attrs) {
+      const v = el.getAttribute(a);
+      const m = v && v.match(/[\w.+-]+@(?:[\w-]+\.)+[a-z]{2,}/i);
+      if (m) return { name: (el.getAttribute('name') || el.textContent || '').trim().slice(0, 80), address: m[0] };
+    }
+    const m = (el.textContent || '').match(/[\w.+-]+@(?:[\w-]+\.)+[a-z]{2,}/i);
+    return m ? { name: '', address: m[0] } : null;
+  };
+  const WEBMAIL = [
+    {
+      host: /^mail\.google\.com$/,
+      body: 'div.a3s',
+      container: (b) => b.closest('.adn, .gs, .h7') || b.parentElement,
+      sender: (c) => emailFrom(pick(c, 'span.gD[email], span[email]'), ['email']),
+      subject: () => (pick(document, 'h2.hP') || {}).textContent || '',
+    },
+    {
+      host: /^outlook\.(live|office|office365)\.com$/,
+      body: 'div[aria-label="Message body"], div[aria-label="郵件內文"], div[aria-label="郵件本文"], div[aria-label="訊息本文"], div[aria-label="メッセージ本文"]',
+      container: (b) => b.closest('[data-app-section="ReadingPane"], [role="main"], [role="region"]') || b.parentElement,
+      sender: (c) => emailFrom(pick(c, '[title*="@"], [aria-label*="@"]'), ['title', 'aria-label']),
+      subject: () => (pick(document, '[role="main"] [role="heading"]') || {}).textContent || '',
+    },
+    {
+      host: /^(mail\.yahoo\.com|tw\.mail\.yahoo\.com|mail\.yahoo\.co\.jp)$/,
+      body: '[data-test-id="message-view-body-content"], .msg-body',
+      container: (b) => b.closest('[data-test-id="message-view"]') || b.parentElement,
+      sender: (c) => emailFrom(pick(c, '[data-test-id="message-from"] [title*="@"], [data-test-id="email-pill"]'), ['title']),
+      subject: () => (pick(document, '[data-test-id="message-group-subject-text"]') || {}).textContent || '',
+    },
+  ];
+  const mailClient = WEBMAIL.find((m) => m.host.test(location.hostname));
+  const mailSeen = new WeakMap();
+
+  function mailBanner(body, r) {
+    const host = document.createElement('official-url-guard-mail');
+    host.setAttribute('data-level', r.overall);
+    host.style.cssText = 'display:block;margin:0 0 12px;';
+    const root = host.attachShadow({ mode: 'open' });
+    const danger = r.overall === 'danger';
+    const reasons = [];
+    if (r.worst) reasons.push(...r.worst.reasons.filter((x) => x.weight > 0).map((x) => x.text));
+    reasons.push(...r.messageNotes);
+    const imp = r.worst && r.worst.impersonating;
+    root.innerHTML = `<style>
+      .box{font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.55;
+        border:2px solid ${danger ? '#cf222e' : '#d97706'};background:${danger ? '#ffebe9' : '#fff4d6'};color:#1f2328}
+      b.t{font-size:15px;display:block;margin-bottom:4px} ul{margin:4px 0 8px;padding-left:20px} li{margin:2px 0}
+      .row{display:flex;gap:8px;flex-wrap:wrap} button,a.btn{font:inherit;font-size:13px;font-weight:700;border-radius:8px;padding:6px 10px;cursor:pointer;text-decoration:none}
+      .rep{background:#fff;color:#cf222e;border:2px solid #cf222e} .ok{background:#1a7f37;color:#fff;border:0} .fp{background:transparent;border:0;color:#57606a;text-decoration:underline;font-weight:400}
+    </style><div class="box" role="alert"><b class="t"></b><ul></ul><div class="row"></div></div>`;
+    root.querySelector('.t').textContent = danger ? '⚠ 官網守門員：這封信很可能是詐騙，請不要點信裡的連結' : '⚠ 官網守門員：這封信有可疑的地方，請先確認';
+    const ul = root.querySelector('ul');
+    for (const t of [...new Set(reasons)].slice(0, 4)) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }
+    const row = root.querySelector('.row');
+    if (imp && imp.url) { const a = document.createElement('a'); a.className = 'btn ok'; a.href = imp.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = `改到${imp.name}官方網站查詢`; row.appendChild(a); }
+    if (r.worst) {
+      const b = document.createElement('button'); b.className = 'rep'; b.textContent = '一鍵通報詐騙網址';
+      b.addEventListener('click', async () => {
+        const res = await send({ type: 'prepareReport', url: r.worst.url, title: document.title });
+        if (res && res.text) { try { await navigator.clipboard.writeText(res.text); } catch { /* 忽略 */ } }
+      });
+      row.appendChild(b);
+      const fp = document.createElement('button'); fp.className = 'fp'; fp.textContent = '這封信是正常的？回報誤判';
+      fp.addEventListener('click', () => send({ type: 'openIssue', kind: 'false-positive', url: r.worst.url }));
+      row.appendChild(fp);
+    }
+    body.parentElement.insertBefore(host, body);
+  }
+
+  async function checkMail() {
+    if (!mailClient) return;
+    for (const body of [...document.querySelectorAll(mailClient.body)].slice(0, 10)) {
+      if (!isVisible(body)) continue;
+      const text = (body.innerText || '').slice(0, 8000);
+      if (text.length < 20 || mailSeen.get(body) === text.length) continue;
+      mailSeen.set(body, text.length);
+      const c = mailClient.container(body);
+      const sender = mailClient.sender(c);
+      // 連結用真正的網址（a.href），不是顯示的文字；Gmail 的安全轉址另外放在 data-saferedirecturl
+      const links = [...body.querySelectorAll('a[href]')].slice(0, 50).map((a) => a.href).filter((h) => /^https?:/i.test(h));
+      const head = [mailClient.subject(), sender ? `From: ${sender.name} <${sender.address}>` : ''].filter(Boolean).join('\n');
+      const r = await send({ type: 'assessEmail', text: `${head}\n${text}`, links, sender });
+      if (!r || !r.overall || body.previousElementSibling?.tagName === 'OFFICIAL-URL-GUARD-MAIL') continue;
+      mailBanner(body, r);
+    }
+  }
+  let mailTimer = null;
+  const scheduleMail = () => { clearTimeout(mailTimer); mailTimer = setTimeout(checkMail, 800); };
+  if (mailClient) {
+    new MutationObserver(scheduleMail).observe(document.documentElement, { childList: true, subtree: true });
+    window.addEventListener('hashchange', scheduleMail);
+  }
+
   // ───────── 網詐通報查詢網：自動帶入可疑網址 ─────────
   async function autofillReport() {
     const pr = await send({ type: 'getPendingReport' });
@@ -469,6 +567,7 @@
 
   async function start() {
     if (location.hostname === 'fraudbuster.digiat.org.tw') autofillReport();
+    if (mailClient) scheduleMail();
     const pre = await send({ type: 'urlCheck', url: location.href });
     if (pre) {
       settings = pre.settings || settings;

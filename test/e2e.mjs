@@ -45,6 +45,17 @@ PAGES['stock-master.net'] = `<!doctype html><html><head><meta charset="utf-8"><t
   <main><h1>名師帶單 保證獲利</h1><p>穩賺不賠，每天推薦飆股！</p><a href="https://line.me/R/ti/p/@stockteacher">立即加入 LINE 好友領取</a></main></body></html>`;
 PAGES['health-update.net'] = `<!doctype html><html><head><meta charset="utf-8"><title>健保署 健保快易通 APP 更新</title>${style}</head><body><header>衛生福利部中央健康保險署</header>
   <main><h1>健保署 APP 更新</h1><p>請下載最新版本以領取退費。</p><a href="/download/nhi.apk">下載 APP</a></main></body></html>`;
+// 模擬 Gmail 的開信畫面（沿用 Gmail 的 class 名稱；內容是使用者實際收到的詐騙信，已移除追蹤代碼）
+const gmail = (subject, fromName, fromAddr, bodyHtml) => `<!doctype html><html><head><meta charset="utf-8"><title>Gmail</title></head><body>
+  <div role="main"><h2 class="hP">${subject}</h2><div class="adn"><span class="gD" email="${fromAddr}" name="${fromName}">${fromName}</span>
+  <div class="a3s aiL">${bodyHtml}</div></div></div></body></html>`;
+PAGES['mail.google.com'] = gmail('年末調整による還付金のお支払いについて', '国税庁', 'info@nta-etax-refund.com',
+  `<p>お手元のAndr\u200boidスマートフォンよりご確認ください。</p><p>平素よりe-Taxをご利用いただき、誠にありがとうございます。国税庁でございます。</p>
+   <p>2025年分の年末調整の処\u200d理が完了し、還付金をお受け取りいただける運びとなりました。</p>
+   <p><a href="https://yarlgs.com/AbCdEf.money">還付金の内容を確認する</a></p><p>※ 国税庁が口座番号・暗証番号の入力を求めることは一切ありません。</p>`);
+PAGES['outlook.live.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>Outlook</title></head><body><div role="main">
+  <div role="heading">牌照稅繳納通知</div><span title="監理服務網 <service@mvdis.gov.tw>">監理服務網</span>
+  <div aria-label="Message body"><p>您好，本期使用牌照稅已開徵，請至監理服務網查詢：<a href="https://www.mvdis.gov.tw/">https://www.mvdis.gov.tw/</a></p></div></div></body></html>`;
 const fallback = `<!doctype html><html><head><meta charset="utf-8"><title>模擬頁</title></head><body><p>模擬頁</p></body></html>`;
 
 const userDataDir = mkdtempSync(path.join(tmpdir(), 'oug-'));
@@ -180,7 +191,7 @@ await settle(800);
 const [issuePage] = await Promise.all([context.waitForEvent('page'), page.click('#falsePositive')]);
 await settle(800);
 const issueHref = decodeURIComponent(issuePage.url());
-check('回報誤判開啟 GitHub Issue 表單並帶入網址', issueHref.startsWith('https://github.com/judylin0324/official-url-guard/issues/new') && issueHref.includes('url=https://ctbc-bank.top/login'));
+check('回報誤判開啟 GitHub Issue 表單並帶入網址', issueHref.startsWith('https://github.com/judylin0324/official-url-guard/issues/new') && issueHref.includes('url=https://ctbc-bank.top/login'), issueHref.slice(0, 160));
 check('回報內容不含網址查詢參數（避免公開個資）', !issueHref.includes('secret123'));
 await issuePage.close();
 
@@ -284,7 +295,21 @@ const off2 = await sw.evaluate(async () => {
 });
 check('官方清單線上更新：含涉詐網域的清單被拒絕', off2.level !== 'official' && off2.status && !off2.status.ok, off2.status && off2.status.error);
 
-// 18. 設定頁
+// 18. 網頁信箱：開信時檢查（模擬 Gmail／Outlook 畫面）
+await page.goto('https://mail.google.com/mail/u/0/#inbox/abc').catch(() => {});
+await settle(2500);
+const mail = await page.evaluate(() => {
+  const el = document.querySelector('official-url-guard-mail');
+  return el ? { level: el.getAttribute('data-level'), text: el.shadowRoot.textContent } : null;
+});
+check('Gmail 開啟假国税庁退稅信時顯示警告', mail && mail.level === 'danger', mail && mail.text.slice(0, 80));
+check('警告內容指出官方網址與藏字手法', mail && /nta\.go\.jp/.test(mail.text) && /看不見的字元/.test(mail.text));
+await page.screenshot({ path: path.join(SHOTS, '9-gmail-warning.png') });
+await page.goto('https://outlook.live.com/mail/0/').catch(() => {});
+await settle(2500);
+check('Outlook 開啟正常的監理服務網通知不顯示警告', await page.evaluate(() => !document.querySelector('official-url-guard-mail')));
+
+// 19. 設定頁
 const opt = await context.newPage();
 await opt.goto(`chrome-extension://${extId}/src/pages/options.html`);
 await settle(600);

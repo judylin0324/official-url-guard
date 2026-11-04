@@ -391,6 +391,17 @@ async function handle(msg, sender) {
     case 'assessMessage':
       return assessMessage(msg.text, st.ctx);
 
+    case 'assessEmail': {
+      // 網頁信箱：內文、真正的連結網址、寄件人
+      const r = assessMessage(msg.text, st.ctx, { links: msg.links || [], sender: msg.sender || null });
+      const order = { danger: 3, caution: 2, platform: 1 };
+      const worst = [...r.items].sort((a, b) => (order[b.level] || 0) - (order[a.level] || 0))[0] || null;
+      let overall = worst && order[worst.level] ? worst.level : null;
+      if (!overall && (r.messageNotes.length || (r.sender && r.sender.problem))) overall = 'caution';
+      if (overall === 'danger') await countBlocked('page');
+      return { ...r, overall, worst };
+    }
+
     case 'openIssue': {
       // 誤判／漏判回報：開啟預填好的 GitHub Issue 表單（網址只保留到路徑）
       const v = msg.verdict || (await assess(msg.url));

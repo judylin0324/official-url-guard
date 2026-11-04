@@ -307,3 +307,77 @@ test('官方清單線上更新：通過檢查才採用', async () => {
   assert.equal(ok.ok, true);
   assert.deepEqual(ok.added, ['new-official-shop.com.tw']);
 });
+
+// ───────── Email（依使用者實際收到的詐騙信改寫：追蹤代碼、案件編號已替換）─────────
+const ETAX_MAIL = [
+  '年末調整による還付金のお支払いについて',
+  'お手元のAndr​oidスマートフォンよりご確認ください。',
+  '平素よりe-Taxをご利用いただき、誠にありがとうございます。国税庁でございます。',
+  '2025年分の年末調整の処‍理が完了し、還付金をお受け取りいただける運びとなりました。',
+  '還付金の内容を確認する',
+  '※ 国税庁が口座番号・暗証番号の入力を求めることは一切ありません。',
+  '※本メールは送信専用⁠です。ご返信には対応しておりません。https://yarlgs.com/AbCdEf.money',
+].join('\n');
+const CHT_MAIL = [
+  '[lChunghwalTelecomlCo., Ltd]\t申請確認',
+  '帳單重複繳款－退款資格確認',
+  '您的帳單可能因付款作業錯誤而重複繳款。請檢視付款資料，並確認兩筆付款是否屬於同一筆帳單。',
+  '案件編號\tCHT000000000000',
+  '檢視並確認您的資料',
+  '如果您不認得這些付款紀錄，請透過該公司官方網站查閱帳單。請勿透過電子郵件提供密碼或完整的信用卡資料。',
+  'https://clt0000000.benchurl.com/c/l?u=0&e=0&c=0&t=0&email=REDACTED&seq=1',
+].join('\n');
+
+test('真實詐騙信：日本国税庁 e-Tax 退稅信', () => {
+  const r = assessMessage(ETAX_MAIL, ctx);
+  assert.equal(r.claim, '日本国税庁（e-Tax）');
+  assert.equal(r.items[0].level, 'danger');
+  const text = r.items[0].reasons.map((x) => x.text).join('\n');
+  assert.match(text, /nta\.go\.jp/);
+  assert.match(text, /看不見的字元/);           // Andr​oid、処‍理、送信専用⁠
+  assert.doesNotMatch(text, /點連結付款/);       // 「還付金のお支払い」是付錢給你，不是要你付款
+  assert.doesNotMatch(text, /提供銀行帳戶/);     // 「口座番号…求めることは一切ありません」是否定句
+});
+
+test('真實詐騙信：冒充中華電信的重複繳款退款信', () => {
+  const r = assessMessage(CHT_MAIL, ctx);
+  assert.equal(r.claim, '中華電信');
+  assert.equal(r.items[0].level, 'danger');
+  const text = r.items[0].reasons.map((x) => x.text).join('\n');
+  assert.match(text, /拆開、混入字元/);          // lChunghwalTelecom
+  assert.match(text, /電子報追蹤連結/);          // benchurl.com
+  assert.doesNotMatch(text, /提供信用卡資料/);   // 「請勿…提供密碼或完整的信用卡資料」是否定句
+});
+
+test('轉址連結：外層是官方網域也要拆開檢查', () => {
+  assert.equal(assessUrl('https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fctbc-bank.top%2Flogin&data=05', ctx).level, 'danger');
+  assert.equal(assessUrl('https://www.google.com/url?q=https://ctbc-bank.top/login&sa=D', ctx).level, 'danger');
+  assert.equal(assessUrl('https://www.google.com/search?q=https://example.com', ctx).level, 'official');
+  assert.equal(assessUrl('https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fwww.mvdis.gov.tw%2F', ctx).level, 'official');
+});
+
+test('寄件人：免費信箱或非官方網域自稱機構', () => {
+  const r = assessMessage('From: 中華郵政 <service.post@gmail.com>\n【中華郵政】您的包裹地址不完整，請點 https://post-tw-abc.com 更新', ctx);
+  assert.ok(r.sender && r.sender.problem && /免費信箱/.test(r.sender.problem));
+  const ok = assessMessage('寄件者：監理服務網 <service@mvdis.gov.tw>\n您的牌照稅請至 https://www.mvdis.gov.tw/ 查詢', ctx);
+  assert.equal(ok.sender.problem, null);
+  assert.equal(ok.items[0].level, 'official');
+});
+
+test('英文短字名稱不誤判（autopay 不是 au PAY）', () => {
+  const r = assessMessage('Heads up, I set up autopay on the shared card. You will see $38 next week.', ctx);
+  assert.equal(r.messageNotes.length, 0);
+});
+
+test('日本政府與品牌', () => {
+  assert.equal(level('https://www.nta.go.jp/'), 'official');
+  assert.equal(level('https://www.city.minato.tokyo.lg.jp/'), 'gov');
+  assert.equal(level('https://www.e-tax.nta.go.jp/'), 'official');
+  assert.equal(level('https://kuronekoyamato-jp.top/'), 'danger');
+  assert.equal(level('https://www.vpass.ne.jp/'), 'official');
+});
+
+test('一般網站帶 ?url= 參數不是轉址（回報表單、網址檢測網站不能被擋）', () => {
+  assert.equal(assessUrl('https://github.com/judylin0324/official-url-guard/issues/new?template=false-positive.yml&url=https://ctbc-bank.top/login', ctx).level, 'official');
+  assert.equal(assessUrl('https://l.facebook.com/l.php?u=https%3A%2F%2Fctbc-bank.top%2F&h=AT0', ctx).level, 'danger');
+});

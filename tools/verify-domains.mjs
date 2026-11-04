@@ -30,5 +30,5 @@ for (const c of cands) {
   ok += keep.length; missing += res.length - keep.length;
   out.push({ ...c, domains: keep.map((x) => x.d), _ranks: Object.fromEntries(res.map((x) => [x.d, x.r])) });
 }
-console.error(`核對完成：${ok} 個網域出現在台灣熱門網站、${missing} 個沒有出現`);
+console.error(`核對完成：${ok} 個網域出現在熱門網站清單、${missing} 個沒有出現`);
 console.log(JSON.stringify(out, null, 1));
