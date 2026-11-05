@@ -1,9 +1,11 @@
 name: 打包發行版
-# 推送 v0.4.0 這類標籤時，自動打包擴充功能並建立 GitHub Release
+# 推送 v0.7.0 這類標籤，或在 GitHub 網頁上發布 Release 時，自動打包擴充功能並附在 Release 上
 
 on:
   push:
     tags: ['v*']
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -11,6 +13,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -19,7 +23,7 @@ jobs:
       - name: 檢查版本號
         run: |
           v=$(node -p "require('./manifest.json').version")
-          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "manifest.json 版本 v$v 和標籤 $GITHUB_REF_NAME 不一致"; exit 1; }
+          [ "v$v" = "$TAG" ] || { echo "manifest.json 版本 v$v 和標籤 $TAG 不一致"; exit 1; }
       - run: npm test
       - name: 打包擴充功能
         run: |
@@ -27,13 +31,18 @@ jobs:
           # 壓縮檔裡放一個英文名稱的資料夾（中文檔名在 Windows 內建解壓縮可能變成亂碼）
           mkdir -p pkg/official-url-guard
           cp -r manifest.json icons src README.md pkg/official-url-guard/
-          (cd pkg && zip -qr "../dist/official-url-guard-${GITHUB_REF_NAME}.zip" official-url-guard -x '*.DS_Store')
-          if unzip -Z1 "dist/official-url-guard-${GITHUB_REF_NAME}.zip" | LC_ALL=C grep -q '[^ -~]'; then echo "壓縮檔裡有非英文檔名"; exit 1; fi
+          (cd pkg && zip -qr "../dist/official-url-guard-${TAG}.zip" official-url-guard -x '*.DS_Store')
+          if unzip -Z1 "dist/official-url-guard-${TAG}.zip" | LC_ALL=C grep -q '[^ -~]'; then echo "壓縮檔裡有非英文檔名"; exit 1; fi
           node tools/build-gmail.mjs
-          (cd gmail && zip -qr "../dist/gmail-apps-script-${GITHUB_REF_NAME}.zip" README.md dist)
+          (cd gmail && zip -qr "../dist/gmail-apps-script-${TAG}.zip" README.md dist)
       - name: 建立 Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sed "s/{{VERSION}}/$GITHUB_REF_NAME/g" .github/release-notes.md > notes.md
-          gh release create "$GITHUB_REF_NAME" dist/*.zip --title "官網守門員 $GITHUB_REF_NAME" --notes-file notes.md
+          sed "s/{{VERSION}}/$TAG/g" .github/release-notes.md > notes.md
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.zip --clobber
+            gh release edit "$TAG" --title "官網守門員 $TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" dist/*.zip --title "官網守門員 $TAG" --notes-file notes.md
+          fi
