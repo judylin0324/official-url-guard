@@ -13,6 +13,10 @@ mkdirSync(out, { recursive: true });
 execFileSync(process.execPath, [path.join(root, 'tools/build-web.mjs')], { stdio: 'inherit' });
 copyFileSync(path.join(root, 'web/index.html'), path.join(out, 'index.html'));
 copyFileSync(path.join(root, 'web/privacy.html'), path.join(out, 'privacy.html'));
+// Gmail 收件匣過濾（Apps Script）：讓使用者直接打開複製
+execFileSync(process.execPath, [path.join(root, 'tools/build-gmail.mjs')], { stdio: 'inherit' });
+mkdirSync(path.join(out, 'gmail'), { recursive: true });
+for (const f of ['Code.gs', 'Engine.gs']) copyFileSync(path.join(root, 'gmail/dist', f), path.join(out, 'gmail', f));
 const json = exportOfficial(OFFICIAL_SITES);
 writeFileSync(path.join(out, 'official-sites.json'), JSON.stringify(json));
 writeFileSync(path.join(out, '.nojekyll'), '');

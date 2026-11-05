@@ -6,3 +6,4 @@ web/artifact.html
 *.zip
 screenshot-*.png
 .DS_Store
+gmail/dist/

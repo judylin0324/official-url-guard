@@ -128,7 +128,43 @@ async function assess(url) {
     const cached = st.rdapCache[reg];
     if (cached && cached.created) age = Math.floor((Date.now() - Date.parse(cached.created)) / 86400000);
   } catch { /* 無效網址 */ }
-  return assessUrl(url, st.ctx, { domainAgeDays: age });
+  const v = assessUrl(url, st.ctx, { domainAgeDays: age });
+  // 來自詐騙信的連結：單看網址可能看不出問題（yarlgs.com），但信件內容已經判定是詐騙
+  if (!['official', 'gov', 'trusted', 'skip', 'invalid', 'danger'].includes(v.level)) {
+    const hit = await mailContextHit(v.host);
+    if (hit) {
+      return {
+        ...v, level: 'danger', score: Math.max(v.score, 90), source: 'mail', impersonating: hit.impersonating || v.impersonating,
+        reasons: [{ text: `這個連結來自一封被判定為詐騙的信件：${hit.reason}`, weight: 90 }, ...v.reasons.filter((r) => r.weight > 0)],
+      };
+    }
+  }
+  return v;
+}
+
+// ───────── 詐騙信裡的連結：記住 2 小時，點了一樣攔截 ─────────
+const MAIL_CONTEXT_MS = 2 * 60 * 60 * 1000;
+async function mailContextHit(host) {
+  if (!host) return null;
+  const { mailContext = {} } = await chrome.storage.session.get('mailContext');
+  let h = host;
+  while (h && h.includes('.')) {
+    const e = mailContext[h];
+    if (e && e.until > Date.now()) return e;
+    h = h.slice(h.indexOf('.') + 1);
+  }
+  return null;
+}
+async function rememberMailContext(items) {
+  const { mailContext = {} } = await chrome.storage.session.get('mailContext');
+  const now = Date.now();
+  for (const [h, e] of Object.entries(mailContext)) if (e.until < now) delete mailContext[h];
+  for (const v of items) {
+    if (v.level !== 'danger' || !v.host) continue;
+    const top = v.reasons.find((r) => r.weight > 0);
+    mailContext[v.host] = { reason: top ? top.text : '信件內容可疑', impersonating: v.impersonating || null, until: now + MAIL_CONTEXT_MS };
+  }
+  await chrome.storage.session.set({ mailContext });
 }
 
 async function lookupDomainAge(url) {
@@ -398,7 +434,10 @@ async function handle(msg, sender) {
       const worst = [...r.items].sort((a, b) => (order[b.level] || 0) - (order[a.level] || 0))[0] || null;
       let overall = worst && order[worst.level] ? worst.level : null;
       if (!overall && (r.messageNotes.length || (r.sender && r.sender.problem))) overall = 'caution';
-      if (overall === 'danger') await countBlocked('page');
+      if (overall === 'danger') {
+        await countBlocked('page');
+        await rememberMailContext(r.items); // 之後點信裡的連結會被攔截
+      }
       return { ...r, overall, worst };
     }
 

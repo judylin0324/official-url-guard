@@ -32,9 +32,12 @@ let cached = null;
 export function labelScore(label, model) {
   if (!model) return 0;
   if (!cached || cached.model !== model) {
+    // 瀏覽器用 atob、Node.js 用 Buffer、Google Apps Script 用 Utilities
     const bytes = typeof atob === 'function'
       ? Uint8Array.from(atob(model.weights), (c) => c.charCodeAt(0))
-      : Uint8Array.from(Buffer.from(model.weights, 'base64'));
+      : typeof Buffer !== 'undefined'
+        ? Uint8Array.from(Buffer.from(model.weights, 'base64'))
+        : Uint8Array.from(Utilities.base64Decode(model.weights), (b) => b & 0xff);
     cached = { model, w: new Int8Array(bytes.buffer) };
   }
   let z = model.bias;

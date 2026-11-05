@@ -509,6 +509,14 @@
       row.appendChild(fp);
     }
     body.parentElement.insertBefore(host, body);
+    // 信裡通往可疑目的地的連結加上紅框（點了也會被攔截）
+    const bad = new Set(r.items.filter((v) => v.level === 'danger').map((v) => v.url));
+    for (const a of body.querySelectorAll('a[href]')) {
+      if (bad.has(a.href) || r.items.some((v) => v.level === 'danger' && v.wrapper === a.href)) {
+        a.setAttribute('data-oug-level', 'danger');
+        a.title = '⚠ 官網守門員：這封信很可能是詐騙，這個連結會被攔截';
+      }
+    }
   }
 
   async function checkMail() {

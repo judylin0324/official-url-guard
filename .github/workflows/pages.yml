@@ -5,7 +5,7 @@ name: 發布網站（GitHub Pages）
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'web/**', 'tools/build-*.mjs', 'manifest.json', '.github/workflows/pages.yml']
+    paths: ['src/**', 'web/**', 'gmail/**', 'tools/build-*.mjs', 'manifest.json', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:

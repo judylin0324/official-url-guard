@@ -305,6 +305,12 @@ const mail = await page.evaluate(() => {
 check('Gmail 開啟假国税庁退稅信時顯示警告', mail && mail.level === 'danger', mail && mail.text.slice(0, 80));
 check('警告內容指出官方網址與藏字手法', mail && /nta\.go\.jp/.test(mail.text) && /看不見的字元/.test(mail.text));
 await page.screenshot({ path: path.join(SHOTS, '9-gmail-warning.png') });
+// 單看網址 yarlgs.com 看不出問題，但它來自被判定為詐騙的信件，點了也要攔截
+await page.click('a[href^="https://yarlgs.com"]');
+await waitUrl(page, /warning\.html/);
+await settle(800);
+check('點詐騙信裡的連結會被攔截到警告頁', page.url().includes('warning.html'), page.url().slice(0, 80));
+check('警告頁說明連結來自詐騙信', (await page.textContent('#reasons').catch(() => '')).includes('詐騙的信件'));
 await page.goto('https://outlook.live.com/mail/0/').catch(() => {});
 await settle(2500);
 check('Outlook 開啟正常的監理服務網通知不顯示警告', await page.evaluate(() => !document.querySelector('official-url-guard-mail')));
