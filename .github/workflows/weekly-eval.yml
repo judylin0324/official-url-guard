@@ -13,8 +13,8 @@ jobs:
   eval:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: 下載公開資料
@@ -38,4 +38,4 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add reports/eval-latest.txt
-          if git diff --cached --quiet; then echo "報告沒有變化"; else git commit -m "每週評估報告 $(date -u +%F)" && git push; fi
+          if git diff --cached --quiet; then echo "報告沒有變化"; else git commit -m "每週評估報告 $(date -u +%F)" && git pull --rebase origin main && git push; fi
