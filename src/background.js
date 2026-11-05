@@ -13,8 +13,9 @@ const DEFAULT_SETTINGS = {
   pageGuard: true, // 網頁要你付款／轉帳／輸入驗證碼，但網址不對時，跳出全頁警告
   showBanner: true, // 可疑網站顯示提示列
   markLinks: true, // 標示網頁中的可疑連結
-  rdap: false, // 查詢網域註冊日期（會把網域名稱送到 rdap.org）
+  rdap: false, // 自動查詢網域註冊日期（會把網域名稱送到 rdap.org）；關閉時仍可在警告畫面按按鈕查詢
   reportUrl: DEFAULT_REPORT_URL,
+  reportScreenshot: true, // 一鍵通報時，把目前網頁截圖存到下載資料夾當證據
   autoUpdateLists: true, // 每天從公開來源更新涉詐網域清單（只下載清單，不傳送任何瀏覽資料）
   remoteOfficial: true, // 每天從專案網站更新官方網站清單（通過安全檢查才採用）
   feedUrl: '', // 額外的清單下載網址（選填）
@@ -126,7 +127,7 @@ async function assess(url) {
   try {
     const reg = parseHost(new URL(url).hostname).registrable;
     const cached = st.rdapCache[reg];
-    if (cached && cached.created) age = Math.floor((Date.now() - Date.parse(cached.created)) / 86400000);
+    if (cached && cached.created) age = ageDays(cached.created);
   } catch { /* 無效網址 */ }
   const v = assessUrl(url, st.ctx, { domainAgeDays: age });
   // 來自詐騙信的連結：單看網址可能看不出問題（yarlgs.com），但信件內容已經判定是詐騙
@@ -167,22 +168,32 @@ async function rememberMailContext(items) {
   await chrome.storage.session.set({ mailContext });
 }
 
-async function lookupDomainAge(url) {
+const RDAP_URL = 'https://rdap.org/domain/';
+const ageDays = (created) => Math.max(0, Math.floor((Date.now() - Date.parse(created)) / 86400000));
+
+/** 查網域註冊日期。force＝使用者按了「查註冊日期」（不受自動查詢設定限制） */
+async function domainAge(url, { force = false } = {}) {
   const st = await getState();
-  if (!st.settings.rdap) return false;
   let p;
-  try { p = parseHost(new URL(url).hostname); } catch { return false; }
-  if (!p.registrable || p.isIp || p.platform || st.rdapCache[p.registrable]) return false;
+  try { p = parseHost(new URL(url).hostname); } catch { return { status: 'invalid' }; }
+  if (!p.registrable || p.isIp) return { status: 'unsupported' };
+  if (p.platform) return { status: 'unsupported', domain: p.registrable };
+  const cached = st.rdapCache[p.registrable];
+  // 註冊日期不會變，查到就一直用；查不到的，手動查詢時隔一天可以再試
+  if (cached && (cached.created || !force || Date.now() - cached.at < 86400000)) {
+    return { domain: p.registrable, created: cached.created, days: cached.created ? ageDays(cached.created) : null, status: cached.created ? 'ok' : 'notfound', cached: true, fresh: false };
+  }
+  if (!force && !st.settings.rdap) return null;
   let created = null;
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 6000);
-    const res = await fetch(`https://rdap.org/domain/${encodeURIComponent(p.registrable)}`, { signal: ctrl.signal });
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch(RDAP_URL + encodeURIComponent(p.registrable), { signal: ctrl.signal, headers: { accept: 'application/rdap+json, application/json' } });
     clearTimeout(timer);
     if (res.ok) {
       const json = await res.json();
       const ev = (json.events || []).find((e) => e.eventAction === 'registration');
-      created = ev ? ev.eventDate : null;
+      created = ev && !Number.isNaN(Date.parse(ev.eventDate)) ? ev.eventDate : null;
     }
   } catch { /* 查不到就算了 */ }
   const { rdapCache = {} } = await chrome.storage.local.get('rdapCache');
@@ -190,7 +201,12 @@ async function lookupDomainAge(url) {
   const keys = Object.keys(rdapCache);
   if (keys.length > 500) keys.sort((a, b) => rdapCache[a].at - rdapCache[b].at).slice(0, keys.length - 500).forEach((k) => delete rdapCache[k]);
   await chrome.storage.local.set({ rdapCache });
-  return Boolean(created);
+  return { domain: p.registrable, created, days: created ? ageDays(created) : null, status: created ? 'ok' : 'notfound', fresh: true };
+}
+
+async function lookupDomainAge(url) {
+  const r = await domainAge(url);
+  return Boolean(r && r.fresh && r.created);
 }
 
 // ───────── 徽章 ─────────
@@ -283,7 +299,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 // ───────── 一鍵通報 ─────────
-function buildReportText(v, title) {
+function buildReportText(v, title, extra = {}) {
   const time = new Date().toLocaleString('zh-TW', { hour12: false });
   const lines = [
     '【可疑詐騙網址通報】',
@@ -298,17 +314,46 @@ function buildReportText(v, title) {
     lines.push('可疑原因：');
     reasons.forEach((r, i) => lines.push(`${i + 1}. ${r.text}`));
   }
+  if (extra.age && extra.age.created) lines.push(`網域註冊日期：${new Date(extra.age.created).toLocaleDateString('zh-TW')}（${extra.age.days} 天前）`);
+  if (extra.screenshot) lines.push(`網頁截圖：已存在下載資料夾（${extra.screenshot}）`);
   lines.push('（由「官網守門員」瀏覽器擴充功能整理）');
   return lines.join('\n');
 }
 
-async function prepareReport(url, title) {
+/** 把分頁目前的畫面存成 PNG（下載資料夾／官網守門員通報截圖／） */
+async function captureEvidence(tabId, host) {
+  if (tabId == null || !chrome.downloads) return null;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.active || !/^https?:/i.test(tab.url || '')) return null;
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    const safeHost = String(host || 'page').toLowerCase().replace(/[^a-z0-9.-]/g, '_').slice(0, 80);
+    // 有些系統（例如部分 Linux）不接受中文檔名，就改用英文資料夾名稱
+    for (const folder of ['官網守門員通報截圖', 'OfficialUrlGuard-report']) {
+      const filename = `${folder}/${safeHost}-${stamp}.png`;
+      try {
+        const id = await chrome.downloads.download({ url: dataUrl, filename, conflictAction: 'uniquify', saveAs: false });
+        return { id, filename };
+      } catch { /* 換下一個名稱 */ }
+    }
+    return null;
+  } catch {
+    return null; // 例如分頁不在前景、瀏覽器不允許截圖
+  }
+}
+
+async function prepareReport(url, title, { tabId = null, capture = false } = {}) {
   const st = await getState();
   const v = await assess(url);
-  const text = buildReportText(v, title);
+  const shot = capture && st.settings.reportScreenshot !== false ? await captureEvidence(tabId, v.host) : null;
+  const age = await domainAge(url).catch(() => null); // 只用已查過的結果或依設定查詢
+  const text = buildReportText(v, title, { screenshot: shot && shot.filename, age });
   await chrome.storage.session.set({ pendingReport: { url: v.url, host: v.host, text, at: Date.now() } });
   await chrome.tabs.create({ url: st.settings.reportUrl || DEFAULT_REPORT_URL });
-  return { text };
+  return { text, screenshot: shot ? shot.filename : null };
 }
 
 // ───────── 涉詐網域清單更新 ─────────
@@ -468,8 +513,8 @@ async function handle(msg, sender) {
           await setBadge(tabId, verdict);
         }
       }
-      const { dismissed = {} } = await chrome.storage.session.get('dismissed');
-      return { verdict, settings: st.settings, allowed: await isAllowed(verdict.host), dismissed: Boolean(dismissed[verdict.host]) };
+      const { dismissed = {}, submitOk = {} } = await chrome.storage.session.get(['dismissed', 'submitOk']);
+      return { verdict, settings: st.settings, allowed: await isAllowed(verdict.host), dismissed: Boolean(dismissed[verdict.host]), submitOk: Boolean(submitOk[verdict.host]) };
     }
 
     case 'scanLinks': {
@@ -529,7 +574,18 @@ async function handle(msg, sender) {
     }
 
     case 'prepareReport':
-      return prepareReport(msg.url, msg.title);
+      return prepareReport(msg.url, msg.title, { tabId, capture: Boolean(msg.capture) });
+
+    case 'domainAge':
+      return domainAge(msg.url || (sender.tab && sender.tab.url), { force: true });
+
+    case 'submitConfirmed': {
+      // 使用者在「送出前確認」選了送出：這次瀏覽（瀏覽器關閉前）同一網站不再詢問
+      const { submitOk = {} } = await chrome.storage.session.get('submitOk');
+      if (msg.host) submitOk[String(msg.host).toLowerCase()] = Date.now();
+      await chrome.storage.session.set({ submitOk });
+      return { ok: true };
+    }
 
     case 'getPendingReport': {
       const { pendingReport } = await chrome.storage.session.get('pendingReport');
@@ -573,4 +629,4 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // 給自動化測試用
-globalThis.__oug = { assess, getState, buildReportText, syncBlockRules, update165 };
+globalThis.__oug = { assess, getState, buildReportText, syncBlockRules, update165, domainAge };

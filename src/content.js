@@ -107,7 +107,7 @@
     sum += Number(v[9]);
     return sum % 10 === 0;
   }
-  const typed = { card: false, idNumber: false };
+  const typed = { card: false, idNumber: false, otp: false };
 
   // ───────── 連結、表單、程式碼線索 ─────────
   function collectLinks() {
@@ -155,6 +155,61 @@
     return [...hosts];
   }
 
+  // 抄襲官網的痕跡：原始碼留著官網的正式網址，或直接從官網載入 Logo、樣式、程式
+  function collectCopy() {
+    const abs = (v) => { if (!v) return ''; try { return new URL(v, location.href).href; } catch { return ''; } };
+    const canonical = document.querySelector('link[rel~="canonical" i][href]');
+    const og = document.querySelector('meta[property="og:url" i][content]');
+    const baseEl = document.querySelector('base[href]');
+    const resources = [];
+    const keys = new Set();
+    const push = (url, kind, logo) => {
+      let host;
+      try {
+        const u = new URL(url, location.href);
+        if (!/^https?:$/.test(u.protocol)) return;
+        host = u.hostname.toLowerCase();
+      } catch { return; }
+      if (host === location.hostname) return;
+      const key = `${host}|${kind}|${logo ? 1 : 0}`;
+      if (keys.has(key) || resources.length >= 80) return;
+      keys.add(key);
+      resources.push({ host, kind, logo: Boolean(logo) });
+    };
+    for (const l of [...document.querySelectorAll('link[href]')].slice(0, 120)) {
+      const rel = (l.getAttribute('rel') || '').toLowerCase();
+      if (rel.includes('stylesheet')) push(l.href, 'css');
+      else if (rel.includes('icon')) push(l.href, 'icon');
+    }
+    for (const sc of [...document.scripts].slice(0, 120)) if (sc.src) push(sc.src, 'script');
+    for (const img of [...document.images].slice(0, 300)) {
+      const src = img.currentSrc || img.src;
+      if (!src) continue;
+      const hint = `${img.className} ${img.id} ${img.alt} ${img.getAttribute('src') || ''}`;
+      push(src, 'img', /logo/i.test(hint) || Boolean(img.closest('header, .header, #header, nav')));
+    }
+    return { canonical: abs(canonical && canonical.getAttribute('href')), ogUrl: abs(og && og.getAttribute('content')), baseHref: baseEl ? baseEl.href : '', resources };
+  }
+
+  // 網頁裡嵌入的 iframe 網域：正規金流（綠界、TapPay、Stripe…）的刷卡欄位放在它們自己的 iframe 裡
+  function collectGateways() {
+    const hosts = new Set();
+    const visit = (root, depth) => {
+      if (!root || depth > 2) return;
+      for (const f of root.querySelectorAll('iframe[src]')) {
+        try { const u = new URL(f.src, location.href); if (/^https?:$/.test(u.protocol)) hosts.add(u.hostname.toLowerCase()); } catch { /* 忽略 */ }
+        if (hosts.size >= 30) return;
+      }
+      for (const el of root.querySelectorAll('*')) if (el.shadowRoot) visit(el.shadowRoot, depth + 1);
+    };
+    visit(document, 0);
+    hosts.delete(location.hostname);
+    return [...hosts];
+  }
+
+  // 網頁程式偷傳卡號（由 page-watch.js 在網頁環境內比對後回報；只有目的網域與是非值）
+  let exfilLive = null;
+
   function collectSignals() {
     const text = (el, max) => ((el && (el.innerText || el.textContent)) || '').slice(0, max);
     const identity = [];
@@ -176,6 +231,9 @@
       exfil: findExfil(),
       formHosts: formHosts(),
       isHttp: location.protocol === 'http:',
+      copy: collectCopy(),
+      gateways: collectGateways(),
+      exfilLive,
     };
   }
 
@@ -210,6 +268,20 @@
     .bar b { font-weight: 700; }
     .bar button { padding: 6px 12px; font-size: 13px; border-radius: 8px; flex: none; }
     .bar .x { background: transparent; color: #57606a; font-size: 18px; padding: 2px 8px; }
+    .channels { background: #f0faf3; border: 1px solid #b7e4c4; border-radius: 10px; padding: 10px 14px; margin: 0 0 14px; font-size: 14px; }
+    .channels b { display: block; margin-bottom: 4px; color: #1a7f37; }
+    .channels ul { margin: 0; }
+    .channels a { color: #0b5cad; font-weight: 600; }
+    .channels small { color: #57606a; }
+    .age { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .age button, .bar button.mini { background: #fff; color: #1f2328; border: 1px solid #d0d7de !important; font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 8px; display: inline-block; }
+    .age .new { color: #cf222e; }
+    .panel { position: fixed; top: 46px; right: 12px; width: min(420px, calc(100vw - 24px)); max-height: 70vh; overflow: auto; z-index: 2147483646; background: #fff; color: #1f2328; border-radius: 12px; padding: 12px 14px; font-size: 14px; line-height: 1.55; box-shadow: 0 12px 32px rgba(0,0,0,.25); }
+    .panel .channels { margin: 0; }
+    .head.amber { background: #b45309; }
+    .head.dark { background: #24292f; }
+    .ask { font-size: 16px; margin: 0 0 12px; }
+    .ask b { color: #cf222e; }
     .toast { position: fixed; right: 16px; bottom: 16px; max-width: 360px; z-index: 2147483647; background: #1f2328; color: #fff; padding: 14px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
     @media (max-width: 520px) { .bar { flex-wrap: wrap; } }
   `;
@@ -238,11 +310,58 @@
     return e;
   }
 
-  async function report(v) {
-    const res = await send({ type: 'prepareReport', url: location.href, title: document.title });
+  const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  /** 一鍵通報：先把警告畫面藏起來截一張網頁的圖當證據，再開啟通報網站 */
+  async function report(v, url = location.href) {
+    const host = root && root.host;
+    if (host) host.style.visibility = 'hidden';
+    await frame();
+    let res;
+    try {
+      res = await send({ type: 'prepareReport', url, title: document.title, capture: true });
+    } finally {
+      if (host) host.style.visibility = '';
+    }
     if (res && res.text) {
       try { await navigator.clipboard.writeText(res.text); } catch { /* 有些網站禁止剪貼簿 */ }
     }
+    if (res && res.screenshot) toast(`已截圖存證：下載資料夾裡的「${res.screenshot}」。通報時可以一起附上。`);
+  }
+
+  /** 正確的繳費管道 */
+  function channelsBlock(ch) {
+    if (!ch || !ch.items || !ch.items.length) return null;
+    return el('div', { class: 'channels', 'data-oug': 'channels' }, [
+      el('b', { text: `${ch.topic}：請改用這些正確管道` }),
+      el('ul', {}, ch.items.map((it) => el('li', {}, it.url
+        ? [el('a', { href: it.url, target: '_blank', rel: 'noopener', text: it.name }), ' ', el('small', { text: it.url.replace(/^https?:\/\//, '').replace(/\/$/, '') })]
+        : [it.name]))),
+    ]);
+  }
+
+  /** 查網域註冊日期（按了才查：只把網域名稱送到 rdap.org） */
+  function ageNode(v, after) {
+    const box = el('span', { class: 'age' });
+    const btn = el('button', {
+      text: '查註冊日期', 'data-oug': 'age',
+      on: {
+        click: async () => {
+          btn.disabled = true;
+          btn.textContent = '查詢中…';
+          const r = await send({ type: 'domainAge', url: location.href });
+          box.replaceChildren(ageText(r));
+          if (r && typeof r.days === 'number' && after) after(r);
+        },
+      },
+    });
+    box.appendChild(btn);
+    return box;
+  }
+  function ageText(r) {
+    if (!r || !r.created) return el('span', { text: r && r.status === 'unsupported' ? '這種網域查不到註冊日期' : '查不到註冊日期' });
+    const date = new Date(r.created).toLocaleDateString('zh-TW');
+    if (r.days <= 90) return el('span', { class: 'new', text: `${date}（才 ${r.days} 天！新註冊的網站很可能是詐騙）` });
+    return el('span', { text: `${date}（${r.days >= 365 ? Math.floor(r.days / 365) + ' 年多' : r.days + ' 天'}）` });
   }
 
   let overlayShown = false;
@@ -263,8 +382,10 @@
       imp ? el('dd', { class: 'good', text: imp.domain || imp.hint || '' }) : null,
       asks ? el('dt', { text: '它要你' }) : null,
       asks ? el('dd', { text: asks }) : null,
+      v.registrable ? el('dt', { text: '註冊時間' }) : null,
+      v.registrable ? el('dd', {}, [ageNode(v)]) : null,
     ]);
-    const overlay = el('div', { class: 'overlay', role: 'alertdialog', 'aria-modal': 'true' }, [
+    const overlay = el('div', { class: 'overlay', role: 'alertdialog', 'aria-modal': 'true', 'data-oug': 'page-overlay' }, [
       el('div', { class: 'card' }, [
         el('div', { class: 'head' }, [
           el('h1', { text: v.page && v.page.asks.length ? '先別付款！這個網頁很可能是假的' : '先別輸入！這個網頁很可能是假的' }),
@@ -273,10 +394,11 @@
         el('div', { class: 'body' }, [
           facts,
           el('ul', {}, top.map((x) => el('li', { text: x.text }))),
+          channelsBlock(v.page && v.page.channels),
           el('div', { class: 'btns' }, [
             el('button', { class: 'primary', text: '離開這個網頁', on: { click: () => send({ type: 'leave' }) } }),
             imp && imp.url ? el('a', { class: 'btn official', href: imp.url, text: `前往${imp.name}官方網站` }) : null,
-            el('button', { class: 'report', text: '一鍵通報詐騙網站', on: { click: () => report(v) } }),
+            el('button', { class: 'report', 'data-oug': 'report', text: '一鍵通報詐騙網站', on: { click: () => report(v) } }),
           ]),
           el('div', { class: 'minor' }, [
             el('button', {
@@ -308,20 +430,43 @@
     barShown = true;
     const r = ui();
     const reason = (v.reasons.find((x) => x.weight > 0) || v.reasons[0] || { text: '' }).text;
-    const bar = el('div', { class: 'bar' + (proceeded ? ' red' : ''), role: 'alert' }, [
+    const bar = el('div', { class: 'bar' + (proceeded ? ' red' : ''), role: 'alert', 'data-oug': 'bar' }, [
       el('div', { class: 'msg' }, [
         el('b', { text: proceeded ? '⚠ 你正在瀏覽高度疑似詐騙的網站：' : '⚠ 請確認網址：' }),
         proceeded ? '請勿付款、轉帳或輸入任何個資。' : reason.replace(/[。.]?$/, '。'),
         '實際網域：',
         el('b', { text: v.registrable || v.displayHost }),
       ]),
+      v.page && v.page.channels ? el('button', { class: 'mini', text: '正確繳費管道', on: { click: () => togglePanel(channelsBlock(v.page.channels)) } }) : null,
+      v.registrable ? el('button', {
+        class: 'mini', text: '註冊多久？',
+        on: { click: () => togglePanel(el('div', {}, [el('b', { text: `${v.registrable} 的註冊日期：` }), ageNode(v, (res) => { if (res.days <= 90) recheck(); })])) },
+      }) : null,
       el('button', { class: 'report', text: '一鍵通報', on: { click: () => report(v) } }),
       el('button', {
         class: 'x', text: '×', 'aria-label': '關閉提示',
-        on: { click: () => { bar.remove(); send({ type: 'dismissBanner', host: v.host }); } },
+        on: { click: () => { bar.remove(); if (panel) panel.remove(); send({ type: 'dismissBanner', host: v.host }); } },
       }),
     ]);
     r.appendChild(bar);
+  }
+
+  let panel = null;
+  function togglePanel(content) {
+    if (panel) { panel.remove(); panel = null; return; }
+    if (!content) return;
+    panel = el('div', { class: 'panel', role: 'dialog' }, [content]);
+    ui().appendChild(panel);
+  }
+
+  // 查到網站很新之後重新判斷（可能升級成危險）
+  function recheck() {
+    barShown = false;
+    const r = ui();
+    r.querySelectorAll('.bar, .panel').forEach((x) => x.remove());
+    panel = null;
+    checks = Math.min(checks, MAX_CHECKS - 1);
+    check();
   }
 
   function toast(message, ms = 9000) {
@@ -330,6 +475,130 @@
     r.appendChild(t);
     setTimeout(() => t.remove(), ms);
   }
+
+  // ───────── 送出前最後一道關卡：不在官方清單的網站，送出卡號（或可疑網站送出驗證碼）前先確認一次 ─────────
+  let lastVerdict = null;
+  let submitOk = false; // 使用者這次瀏覽已確認過這個網站
+  let guardOpen = false;
+  let bypass = false;
+  const SUBMIT_WORDS = /送出|確認|確定|下一步|付款|繳費|繳納|支付|結帳|提交|立即|驗證|領取|申請|完成|submit|pay|confirm|next|continue|verify|send|proceed|checkout|次へ|支払|送信/i;
+
+  function guardKind() {
+    if (!deepCheck || submitOk || !lastVerdict || bypass) return null;
+    if (['official', 'gov', 'trusted', 'skip', 'invalid'].includes(lastVerdict.level)) return null;
+    if (typed.card) return 'card';
+    if (typed.otp && ['caution', 'danger', 'platform'].includes(lastVerdict.level)) return 'otp';
+    return null;
+  }
+
+  function submitTarget(t) {
+    if (!(t instanceof Element)) return null;
+    const b = t.closest('button, input[type="submit"], input[type="button"], input[type="image"], [role="button"], a');
+    if (b && b.tagName === 'BUTTON' && (b.type || 'submit') === 'submit' && b.form) return b;
+    if (b && b.tagName === 'INPUT' && /^(submit|image)$/i.test(b.type)) return b;
+    const node = b || t;
+    const label = String(node.innerText || node.value || node.getAttribute('aria-label') || '').trim();
+    return label && label.length <= 30 && SUBMIT_WORDS.test(label) ? node : null;
+  }
+
+  function showSubmitGuard(kind, proceed) {
+    if (guardOpen) return;
+    guardOpen = true;
+    const v = lastVerdict;
+    const r = ui();
+    const what = kind === 'otp' ? '簡訊驗證碼' : '信用卡卡號';
+    const bad = v.level === 'danger' || v.level === 'caution';
+    const status = v.level === 'danger' ? '高度疑似詐騙' : v.level === 'caution' ? '有可疑特徵' : v.level === 'platform' ? '任何人都能建立的頁面' : '不在官方網站清單中';
+    const imp = v.impersonating;
+    const close = () => { overlay.remove(); guardOpen = false; };
+    const overlay = el('div', { class: 'overlay', role: 'alertdialog', 'aria-modal': 'true', 'data-oug': 'submit-guard' }, [
+      el('div', { class: 'card' }, [
+        el('div', { class: 'head ' + (v.level === 'danger' ? '' : bad ? 'amber' : 'dark') }, [
+          el('h1', { text: `送出${what}前，請再確認一次網址` }),
+          el('p', { text: '假的繳費網頁可以做得跟真的一模一樣，只有網址騙不了人。' }),
+        ]),
+        el('div', { class: 'body' }, [
+          el('p', { class: 'ask' }, ['你正要把', what, '送給 ', el('b', { text: v.registrable || v.displayHost }), '。']),
+          el('dl', { class: 'facts' }, [
+            el('dt', { text: '這個網站' }),
+            el('dd', { class: bad ? 'bad' : '', text: status }),
+            imp ? el('dt', { text: '頁面自稱' }) : null,
+            imp ? el('dd', { text: imp.name }) : null,
+            imp && imp.domain ? el('dt', { text: '官方網址' }) : null,
+            imp && imp.domain ? el('dd', { class: 'good', text: imp.domain }) : null,
+            v.registrable ? el('dt', { text: '註冊時間' }) : null,
+            v.registrable ? el('dd', {}, [ageNode(v)]) : null,
+          ]),
+          el('ul', {}, [
+            el('li', { text: '這個網址是你自己輸入、或從官方 App 進來的嗎？如果是點簡訊、Email、LINE 裡的連結，請不要送出。' }),
+            el('li', { text: '停車費、罰單、通行費、補運費、退稅、補助，都不會用簡訊連結叫你刷卡或輸入驗證碼。' }),
+            ...(v.reasons || []).filter((x) => x.weight > 0).slice(0, 2).map((x) => el('li', { text: x.text })),
+          ]),
+          channelsBlock(v.page && v.page.channels),
+          el('div', { class: 'btns' }, [
+            el('button', { class: 'primary', text: '不要送出', on: { click: close } }),
+            imp && imp.url ? el('a', { class: 'btn official', href: imp.url, text: `改到${imp.name}官方網站` }) : null,
+            v.level === 'danger' ? el('button', { class: 'report', text: '一鍵通報詐騙網站', on: { click: () => { close(); report(v); } } }) : null,
+          ]),
+          el('div', { class: 'minor' }, [
+            el('button', {
+              class: 'link', 'data-oug': 'confirm-submit', text: `我確認網址正確，送出${what}`,
+              on: { click: async () => { submitOk = true; close(); await send({ type: 'submitConfirmed', host: v.host }); proceed(); } },
+            }),
+          ]),
+        ]),
+      ]),
+    ]);
+    r.appendChild(overlay);
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    overlay.querySelector('button.primary').focus();
+  }
+
+  function fromOurUi(e) {
+    return e.composedPath().some((n) => n && n.tagName && /^OFFICIAL-URL-GUARD/.test(n.tagName));
+  }
+
+  window.addEventListener('click', (e) => {
+    const kind = guardKind();
+    if (!kind || fromOurUi(e)) return;
+    const target = submitTarget(e.composedPath()[0]);
+    if (!target) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    showSubmitGuard(kind, () => {
+      bypass = true;
+      try { target.click(); } finally { bypass = false; }
+    });
+  }, true);
+
+  window.addEventListener('submit', (e) => {
+    const kind = guardKind();
+    const form = e.target;
+    if (!kind || !(form instanceof HTMLFormElement)) return;
+    const submitter = e.submitter;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    showSubmitGuard(kind, () => {
+      bypass = true;
+      try {
+        if (form.requestSubmit) form.requestSubmit(submitter && submitter.form === form ? submitter : undefined);
+        else HTMLFormElement.prototype.submit.call(form);
+      } catch {
+        HTMLFormElement.prototype.submit.call(form);
+      } finally { bypass = false; }
+    });
+  }, true);
+
+  // page-watch.js（網頁環境）回報：剛輸入的卡號被傳出去了
+  window.addEventListener('message', (e) => {
+    const d = e.data;
+    if (e.source !== window || !d || d.__oug !== 'exfil' || typeof d.host !== 'string') return;
+    const next = { host: d.host.slice(0, 253), kind: d.kind === 'otp' ? 'otp' : 'card', beforeSubmit: d.beforeSubmit === true };
+    // 保留最嚴重的一筆：送出前外傳 > 外傳到別的網站
+    if (exfilLive && exfilLive.beforeSubmit && !next.beforeSubmit) return;
+    exfilLive = next;
+    if (deepCheck && !overlayShown) { checks = Math.min(checks, MAX_CHECKS - 1); check(); }
+  });
 
   // ───────── 檢查流程 ─────────
   let settings = { markLinks: true, pageGuard: true, showBanner: true };
@@ -351,6 +620,8 @@
       if (!res || !res.verdict) return;
       settings = res.settings;
       const { verdict: v, allowed, dismissed } = res;
+      lastVerdict = v;
+      if (res.submitOk) submitOk = true;
       if (allowed) {
         if (v.level === 'danger') showBar(v, true);
       } else if (v.level === 'danger' && settings.pageGuard) {
@@ -395,6 +666,8 @@
       let changed = false;
       if (!typed.card && looksLikeCard(t.value)) { typed.card = true; changed = true; }
       if (!typed.idNumber && looksLikeTwId(t.value)) { typed.idNumber = true; changed = true; }
+      if (!typed.otp && /^\d{4,8}$/.test(String(t.value || '').trim())
+          && ((t.getAttribute('autocomplete') || '') === 'one-time-code' || (RE.otp.test(describe(t)) && !RE.otpExclude.test(describe(t))))) typed.otp = true;
       if (changed) check();
     }, 250);
   }, true);
@@ -497,11 +770,20 @@
     for (const t of [...new Set(reasons)].slice(0, 4)) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }
     const row = root.querySelector('.row');
     if (imp && imp.url) { const a = document.createElement('a'); a.className = 'btn ok'; a.href = imp.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = `改到${imp.name}官方網站查詢`; row.appendChild(a); }
+    // 正確的繳費／查詢管道（例如通行費 → 遠通電收官網）
+    const ch = r.worst && r.worst.channels;
+    const chLink = ch && ch.items.find((it) => it.url && (!imp || it.url !== imp.url));
+    if (chLink) { const a = document.createElement('a'); a.className = 'btn ok'; a.href = chLink.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = `正確管道：${chLink.name}`; row.appendChild(a); }
     if (r.worst) {
       const b = document.createElement('button'); b.className = 'rep'; b.textContent = '一鍵通報詐騙網址';
       b.addEventListener('click', async () => {
-        const res = await send({ type: 'prepareReport', url: r.worst.url, title: document.title });
+        // 截圖存證：把整封信（含寄件人）截下來，警告框先藏起來
+        host.style.visibility = 'hidden';
+        await frame();
+        let res;
+        try { res = await send({ type: 'prepareReport', url: r.worst.url, title: document.title, capture: true }); } finally { host.style.visibility = ''; }
         if (res && res.text) { try { await navigator.clipboard.writeText(res.text); } catch { /* 忽略 */ } }
+        if (res && res.screenshot) toast(`已截圖存證：下載資料夾裡的「${res.screenshot}」。`);
       });
       row.appendChild(b);
       const fp = document.createElement('button'); fp.className = 'fp'; fp.textContent = '這封信是正常的？回報誤判';

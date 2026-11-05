@@ -1,4 +1,4 @@
-import { renderVerdict, h, send } from './ui.js';
+import { renderVerdict, h, send, ageLabel } from './ui.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -22,8 +22,28 @@ function actionButtons(v, tab) {
   if (['danger', 'caution', 'platform', 'unknown'].includes(v.level)) {
     box.append(h('button', {
       class: 'btn red', text: '一鍵通報詐騙',
-      onclick: async () => { const r = await send({ type: 'prepareReport', url: v.url, title: tab && tab.title }); if (r) await copy(r.text); window.close(); },
+      onclick: async () => {
+        // 從工具列通報：順便把目前的網頁截圖存證（警告頁不截）
+        const onPage = tab && v.url === tab.url;
+        const r = await send({ type: 'prepareReport', url: v.url, title: tab && tab.title, tabId: tab && tab.id, capture: onPage });
+        if (r) await copy(r.text);
+        window.close();
+      },
     }));
+  }
+  if (['danger', 'caution', 'platform', 'unknown'].includes(v.level) && v.registrable) {
+    const btn = h('button', {
+      class: 'btn small', text: '註冊多久？', title: `查詢 ${v.registrable} 的註冊日期（只把網域名稱送到 rdap.org）`,
+      onclick: async () => {
+        btn.disabled = true;
+        btn.textContent = '查詢中…';
+        const r = await send({ type: 'domainAge', url: v.url });
+        const line = h('div', { class: 'age-line' + (r && r.days != null && r.days <= 90 ? ' new' : ''), text: `${v.registrable}：${ageLabel(r)}` });
+        $('current').append(line);
+        btn.remove();
+      },
+    });
+    box.append(btn);
   }
   if (['unknown', 'caution'].includes(v.level)) {
     box.append(h('button', {

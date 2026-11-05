@@ -51,6 +51,10 @@ export function renderVerdict(v, { maxReasons = 4 } = {}) {
     ]),
     reasons.length ? h('ul', {}, reasons.map((r) => h('li', { text: r.text }))) : null,
   ]);
+  const ch = (v.page && v.page.channels) || v.channels;
+  if (ch && ch.items && ch.items.length && ['danger', 'caution', 'platform'].includes(v.level)) {
+    card.append(channelsNode(ch));
+  }
   if (v.impersonating && ['danger', 'caution'].includes(v.level)) {
     const imp = v.impersonating;
     card.append(h('div', { class: 'official-link' }, [
@@ -60,6 +64,24 @@ export function renderVerdict(v, { maxReasons = 4 } = {}) {
     ]));
   }
   return card;
+}
+
+/** 正確的繳費管道（例如停車費 → 各縣市停管處、超商、全國繳費網） */
+export function channelsNode(ch) {
+  return h('div', { class: 'channels' }, [
+    h('b', { text: `${ch.topic}：請改用這些正確管道` }),
+    h('ul', {}, ch.items.map((it) => h('li', {}, it.url
+      ? [h('a', { href: it.url, target: '_blank', rel: 'noopener', text: it.name }), ' ', h('small', { class: 'muted', text: it.url.replace(/^https?:\/\//, '').replace(/\/$/, '') })]
+      : [it.name]))),
+  ]);
+}
+
+/** 網域註冊日期的文字 */
+export function ageLabel(r) {
+  if (!r || !r.created) return r && r.status === 'unsupported' ? '這種網域查不到註冊日期' : '查不到註冊日期（有些國家的網域不公開）';
+  const date = new Date(r.created).toLocaleDateString('zh-TW');
+  if (r.days <= 90) return `註冊於 ${date}，才 ${r.days} 天！新註冊的網站很可能是詐騙`;
+  return `註冊於 ${date}（${r.days >= 365 ? Math.floor(r.days / 365) + ' 年多' : r.days + ' 天'}前）`;
 }
 
 export function send(msg) {

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "官網守門員 - 假冒網站攔截",
   "short_name": "官網守門員",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "確認網址是不是官方網站。攔截假冒停車費、罰單、ETC、包裹、運動幣、抽獎等要你付款或轉帳的詐騙網頁，並可一鍵通報。",
   "icons": {
     "16": "icons/icon-16.png",
@@ -29,12 +29,24 @@
     "webNavigation",
     "alarms",
     "contextMenus",
-    "declarativeNetRequestWithHostAccess"
+    "declarativeNetRequestWithHostAccess",
+    "downloads"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "src/page-watch.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": [
         "http://*/*",

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(path.join(root, p), 'utf8');
-const FILES = ['src/lib/domain.js', 'src/data/official-sites.js', 'src/data/risk-data.js', 'src/data/label-model.js',
+const FILES = ['src/lib/domain.js', 'src/data/official-sites.js', 'src/data/risk-data.js', 'src/data/label-model.js', 'src/data/payment-data.js',
   'src/lib/label-model-core.js', 'src/data/project.js', 'src/lib/checker.js', 'src/lib/blocklist.js'];
 
 export function buildEngine() {

@@ -10,7 +10,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(path.join(root, p), 'utf8');
 
 // 依相依順序串接，拿掉 import／export 關鍵字
-const parts = ['src/lib/domain.js', 'src/data/official-sites.js', 'src/data/risk-data.js', 'src/data/label-model.js', 'src/lib/label-model-core.js', 'src/data/project.js', 'src/lib/checker.js'].map((f) => {
+const parts = ['src/lib/domain.js', 'src/data/official-sites.js', 'src/data/risk-data.js', 'src/data/label-model.js', 'src/data/payment-data.js', 'src/lib/label-model-core.js', 'src/data/project.js', 'src/lib/checker.js'].map((f) => {
   const code = read(f)
     .replace(/^import[\s\S]*?from\s+'[^']+';\s*$/gm, '')
     .replace(/^export\s+(const|function|class|let)\s/gm, '$1 ');

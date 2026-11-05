@@ -89,6 +89,12 @@ button.primary { background: var(--action); color: var(--action-ink); border-col
 .reasons li + li { margin-top: 3px; }
 .official-box { grid-column: 1 / -1; background: var(--sheet); border: 1px dashed var(--official); border-radius: 10px; padding: 10px 12px; font-size: 15px; }
 .official-box b { color: var(--official); font-family: var(--font-mono); }
+.channels-box { grid-column: 1 / -1; background: var(--sheet); border: 1px solid var(--official); border-radius: 10px; padding: 10px 12px; font-size: 15px; }
+.channels-box .cap { margin: 0 0 4px; color: var(--official); font-weight: 700; }
+.channels-box ul { margin: 0; padding-left: 20px; }
+.channels-box li { margin: 3px 0; overflow-wrap: anywhere; }
+.channels-box a { color: var(--official); font-weight: 600; }
+.channels-box .mono { font-family: var(--font-mono); font-size: 13px; color: var(--ink-soft); }
 .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
 .actions .btn, .actions button { font-size: 14px; padding: 8px 12px; }
 .btn.go { background: var(--official); border-color: var(--official); color: var(--sheet); }
@@ -228,6 +234,14 @@ footer { font-size: 13px; color: var(--ink-soft); display: flex; flex-direction:
       ]),
       imp && ['danger', 'caution'].includes(v.level)
         ? h('div', { class: 'official-box' }, [`看起來在冒充「${imp.name}」。`, imp.domain ? h('span', {}, ['真正的官方網址是 ', h('b', { text: imp.domain }), '。']) : imp.hint || ''])
+        : null,
+      v.channels && v.channels.items.length && ['danger', 'caution', 'platform'].includes(v.level)
+        ? h('div', { class: 'channels-box' }, [
+          h('p', { class: 'cap', text: `${v.channels.topic}：請改用這些正確管道` }),
+          h('ul', {}, v.channels.items.map((it) => h('li', {}, it.url
+            ? [h('a', { href: it.url, target: '_blank', rel: 'noopener', text: it.name }), ' ', h('span', { class: 'mono', text: it.url.replace(/^https?:\/\//, '').replace(/\/$/, '') })]
+            : [it.name]))),
+        ])
         : null,
       actions.length ? h('div', { class: 'actions' }, actions) : null,
     ]);

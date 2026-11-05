@@ -8,6 +8,7 @@ import {
 } from './domain.js';
 import { TLD_RISK, BRAND_TLDS, COMMON_WORDS } from '../data/risk-data.js';
 import { LABEL_MODEL } from '../data/label-model.js';
+import { GATEWAY_HOSTS, ACS_HOSTS, COMMON_EMBED_HOSTS, PAYMENT_CHANNELS } from '../data/payment-data.js';
 import { labelScore } from './label-model-core.js';
 import {
   OFFICIAL_SITES, USER_CONTENT_RULES, GOV_ALIASES, GOV_PROGRAMS, PAYMENT_THEMES, BENEFIT_THEMES, TRANSFER_KEYWORDS,
@@ -677,6 +678,76 @@ function findCrypto(text) {
   return null;
 }
 
+/** host 本身或上層網域在清單（物件或陣列）中 */
+function hostIn(host, list) {
+  if (!host) return null;
+  const has = Array.isArray(list) ? (h) => list.includes(h) : (h) => Object.prototype.hasOwnProperty.call(list, h);
+  let h = host;
+  while (h && h.includes('.')) {
+    if (has(h)) return Array.isArray(list) ? h : list[h];
+    h = h.slice(h.indexOf('.') + 1);
+  }
+  return null;
+}
+const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ''; } };
+
+/** 正確的繳費管道（依繳費名目，找不到時依自稱的機構） */
+export function paymentChannels(text, claimSite) {
+  const t = String(text || '');
+  const byClaim = claimSite && claimSite.domains
+    ? { topic: claimSite.name, items: [{ name: `${claimSite.name}官方網站`, url: officialUrl(claimSite) }, { name: '或使用該機構的官方 App、客服電話（請自己查，不要用訊息裡的電話）' }] }
+    : null;
+  // 自稱的是公司（電信、銀行、購物…）時，直接請他到那家公司的官網；政府、公用事業、物流再依繳費名目
+  if (byClaim && !['政府機關', '公用事業', '物流'].includes(claimSite.category)) return byClaim;
+  for (const c of PAYMENT_CHANNELS) if (c.match.test(t)) return { topic: c.topic, items: c.items };
+  return byClaim;
+}
+
+/** 從網頁原始碼找「複製自某官網」的痕跡：canonical、og:url、<base>、直接載入官網的 Logo／樣式／程式 */
+function copiedFrom(copy, ctx, base) {
+  if (!copy) return null;
+  const officialOf = (host, isResource) => {
+    if (!host || parseHost(host).registrable === base.registrable) return null;
+    const off = lookupOfficial(host, ctx);
+    // 支付品牌（台灣 Pay、街口…）的 Logo 常出現在一般商店的結帳頁，載入它們的圖片不算抄襲
+    if (off && isResource && off.site.category === '支付') return null;
+    if (off && (off.site.sensitive || govLabel(host))) return { site: off.site, domain: off.domain };
+    const g = govLabel(host);
+    if (g) return { site: null, domain: parseHost(host).registrable, gov: g };
+    return null;
+  };
+  const HOW = { canonical: '網頁原始碼裡的正式網址（canonical）', ogUrl: '網頁的分享資訊（og:url）', baseHref: '網頁的基準網址（base）' };
+  for (const k of ['canonical', 'ogUrl', 'baseHref']) {
+    const o = officialOf(hostOf(copy[k]));
+    if (o) return { ...o, how: `${HOW[k]}指向 ${hostOf(copy[k])}` };
+  }
+  // 直接從官網載入資源：Logo、樣式表、程式算 2 分，其他圖片 1 分；累計 2 分以上才算
+  const tally = new Map();
+  for (const r of copy.resources || []) {
+    if (!r || !r.host || COMMON_EMBED_HOSTS.test(r.host) || hostIn(r.host, GATEWAY_HOSTS)) continue;
+    const o = officialOf(r.host, true);
+    if (!o) continue;
+    const key = o.site ? o.site.name : o.domain;
+    const prev = tally.get(key) || { ...o, points: 0, hosts: new Set() };
+    prev.points += r.logo || r.kind === 'css' || r.kind === 'script' || r.kind === 'icon' ? 2 : 1;
+    prev.hosts.add(r.host);
+    tally.set(key, prev);
+  }
+  const best = [...tally.values()].sort((a, b) => b.points - a.points)[0];
+  if (best && best.points >= 2) return { site: best.site, domain: best.domain, gov: best.gov, how: `網頁直接從 ${[...best.hosts][0]} 載入 Logo、樣式或程式` };
+  return null;
+}
+
+/** 文字裡的金額（NT$120、120 元、120円），回傳最小的正數 */
+function smallestAmount(text) {
+  let min = null;
+  for (const m of String(text || '').matchAll(/(?:NT\$|NTD|新台幣|新臺幣|台幣|臺幣|＄|\$|¥)\s*([\d,]{1,7})|([\d,]{1,7})\s*(?:元|圓|円)(?![年月日])/g)) {
+    const n = Number((m[1] || m[2]).replace(/,/g, ''));
+    if (n > 0 && (min === null || n < min)) min = n;
+  }
+  return min;
+}
+
 /**
  * @param {object} signals 內容腳本收集的頁面資訊
  *   title, siteName, identityText（h1、Logo、頁首）, bodyText
@@ -686,6 +757,9 @@ function findCrypto(text) {
  *   exfil   網頁程式把資料送往 Telegram／Discord 時的名稱
  *   formHosts 表單送出的目的網站
  *   isHttp  是否未加密
+ *   copy    抄襲痕跡 { canonical, ogUrl, baseHref, resources: [{ host, kind: img|css|script|icon, logo }] }
+ *   gateways 網頁裡嵌入的 iframe 網域（正規金流的刷卡欄位放在 iframe 裡）
+ *   exfilLive 網頁程式把剛輸入的卡號／驗證碼傳出去 { host, kind: card|otp, beforeSubmit }（只有目的網域與是非值）
  * @param {object} ctx
  * @param {object} base assessUrl() 的結果
  */
@@ -724,6 +798,9 @@ export function assessPage(signals, ctx, base) {
     const where = c.scope === 'title' ? titleText : c.scope === 'identity' ? identityText : allNorm;
     if (c.alias && where.includes(c.alias)) { claim = c; break; }
   }
+  // 抄襲官網的痕跡：就算機構名稱做成圖片、文字讀不到，也等於自稱是那個官網
+  const copied = copiedFrom(signals.copy, ctx, base);
+  if (!claim && copied && copied.site) claim = { display: copied.site.name, site: copied.site, viaCopy: true };
   // 補助名目（運動幣、普發現金…）本身就代表「自稱政府」
   const govProgram = findAny(allNorm, GOV_PROGRAMS)[0] || null;
   const govStrong = findAny(identityText, GOV_ALIASES)[0] || null;
@@ -739,7 +816,17 @@ export function assessPage(signals, ctx, base) {
   const add = (w, text) => { reasons.push({ text, weight: w }); };
   const govImp = (name) => ({ name, domain: null, url: null, hint: '真正的政府網站網址以 .gov.tw 結尾（臺北市為 .gov.taipei）' });
 
-  if (money && claim) {
+  if (copied) {
+    const who = copied.site ? `「${copied.site.name}」官網` : `政府網站 ${copied.domain}`;
+    if (money || creds.length) {
+      add(85, `這個網頁是從${who}複製來的（${copied.how}），卻在 ${base.displayHost} 要你提供${[...new Set([...asks, ...creds])].join('、')}`);
+    } else {
+      add(40, `這個網頁看起來是從${who}複製來的（${copied.how}），但網址是 ${base.displayHost}`);
+    }
+    impersonating = copied.site ? { name: copied.site.name, domain: copied.site.domains[0], url: officialUrl(copied.site) } : govImp(`政府網站 ${copied.domain}`);
+  }
+
+  if (money && claim && !claim.viaCopy) {
     add(85, `頁面自稱是「${claim.display}」，要你提供${asksText}，但網址 ${base.displayHost} 不是「${claim.site.name}」的官方網址（官方是 ${claim.site.domains[0]}）`);
     impersonating = { name: claim.site.name, domain: claim.site.domains[0], url: officialUrl(claim.site) };
   } else if (money && govStrong) {
@@ -811,6 +898,41 @@ export function assessPage(signals, ctx, base) {
     add(80, '頁面要你先繳稅金、保證金或手續費才能出金。合法投資平台不會在出金前另外向你收錢，這是假投資的典型手法。');
   }
 
+  // 偷傳卡號：還沒按送出，輸入的卡號或驗證碼就被傳出去（網頁內部比對，只回報是非值與目的網域）
+  const live = signals.exfilLive;
+  const liveGateway = live && live.host ? hostIn(String(live.host).toLowerCase(), GATEWAY_HOSTS) : null;
+  if (live && live.host && liveGateway) {
+    reasons.push({ text: `你輸入的卡號交給正規金流（${liveGateway}）處理`, weight: 0 });
+  } else if (live && live.host) {
+    const what = live.kind === 'otp' ? '驗證碼' : '卡號';
+    if (live.beforeSubmit && live.kind !== 'otp') {
+      add(85, `你還沒按送出，這個網頁就已經把你剛輸入的${what}傳到 ${live.host}。正規網站不會這樣做，這是盜取${what}的程式`);
+    } else if (parseHost(live.host).registrable !== base.registrable && !hostIn(live.host, GATEWAY_HOSTS)) {
+      add(40, `你輸入的${what}被送到另一個網站 ${live.host}`);
+    }
+  }
+
+  // 正規金流 vs 自製刷卡表單
+  const gatewayName = (signals.gateways || []).map((h) => hostIn(h, GATEWAY_HOSTS)).find(Boolean);
+  if (f.card && !gatewayName) {
+    add(15, '卡號直接輸入在這個網站自己做的表單裡，不是交給綠界、藍新、TapPay 這類正規金流處理');
+  } else if (gatewayName) {
+    reasons.push({ text: `刷卡欄位由正規金流（${gatewayName}）提供`, weight: 0 });
+  }
+
+  // 假的信用卡 3D 驗證頁：真正的 3D 驗證由發卡銀行或驗證服務商處理
+  if (/3\s*D\s*(驗證|認證|安全|密碼)|3-?D\s*Secure|Verified by Visa|SecureCode|Identity Check|J\/Secure|SafeKey|ProtectBuy/i.test(rawAll)
+      && (f.otp || f.password || f.card) && !hostIn(base.host, ACS_HOSTS)) {
+    add(75, `這是假的信用卡 3D 驗證頁：真正的 3D 驗證由你的發卡銀行處理，網址會是銀行或驗證服務商的網域，不會是 ${base.displayHost}`);
+    if (!impersonating) impersonating = { name: '信用卡發卡銀行', domain: null, url: null, hint: '請打信用卡背面的客服電話確認，不要在這個頁面輸入驗證碼' };
+  }
+
+  // 小額誘餌：停車費、補運費只要幾十元，讓人不設防地輸入卡號
+  const amount = smallestAmount(rawAll);
+  if ((f.card || f.cvv) && payThemes.length && amount !== null && amount <= 300) {
+    add(15, `只要繳 ${amount} 元這種小額，是為了讓你不設防地輸入卡號；卡號一旦外流，就會被拿去盜刷更大的金額`);
+  }
+
   // 沒加密、資料送到別的網站
   if (signals.isHttp && (money || creds.length)) add(25, '連線沒有加密（http），卻要你輸入付款或登入資料');
   const foreign = (signals.formHosts || []).map((h) => parseHost(h).registrable).find((r) => r && r !== base.registrable);
@@ -834,7 +956,12 @@ export function assessPage(signals, ctx, base) {
     score,
     reasons: [...reasons, ...base.reasons.filter((r) => r.weight > 0 || !reasons.length)].sort((a, b) => b.weight - a.weight),
     impersonating,
-    page: { asks, creds, claim: claim ? claim.site.name : govStrong || govProgram, themes: themes.slice(0, 5), weight, apk: Boolean(links.apk), investment: guarantee.length > 0 },
+    page: {
+      asks, creds, claim: claim ? claim.site.name : govStrong || govProgram, themes: themes.slice(0, 5), weight, apk: Boolean(links.apk),
+      investment: guarantee.length > 0, copied: copied ? copied.how : null, gateway: gatewayName || null, amount,
+      // 有要錢或要秘密、而且判定可疑以上時，告訴使用者正確的繳費管道
+      channels: (money || creds.length || themes.length) ? paymentChannels(`${rawAll}\n${themes.join(' ')}`, claim && claim.site) : null,
+    },
   };
 }
 
@@ -1004,9 +1131,10 @@ export function assessMessage(text, ctx, options = {}) {
     if (sender && sender.problem) extra.push({ weight: 40, text: sender.problem });
     if (guarantee.length) extra.push({ weight: 60, text: `訊息宣稱「${guarantee[0]}」。合法投資不會保證獲利，這是假投資常見話術` });
     if (!extra.length) return v;
+    const channels = paymentChannels(`${clean}\n${themes.join(' ')}`, claim && claim.site);
     const ws = extra.map((e) => e.weight).sort((x, y) => y - x);
     const score = Math.min(100, Math.round(v.score + ws[0] + 0.5 * ws.slice(1).reduce((x, y) => x + y, 0)));
-    return { ...v, score, level: levelFor(score), impersonating: imp, reasons: [...extra, ...v.reasons.filter((r) => r.weight > 0)].sort((x, y) => y.weight - x.weight) };
+    return { ...v, score, level: levelFor(score), impersonating: imp, channels, reasons: [...extra, ...v.reasons.filter((r) => r.weight > 0)].sort((x, y) => y.weight - x.weight) };
   });
 
   const notes = messageNotesFor(clean, norm, guarantee, themes);

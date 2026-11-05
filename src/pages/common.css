@@ -67,6 +67,11 @@ input[type="text"], input[type="url"], textarea {
 .verdict .host b { font-size: 14px; }
 .verdict ul { margin: 10px 0 0; padding-left: 18px; }
 .verdict li { margin: 3px 0; }
+.verdict .channels { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--green-bg); font-size: 13px; }
+.verdict .channels b { display: block; margin-bottom: 2px; }
+.verdict .channels ul { margin: 0; }
+.age-line { font-size: 13px; margin-top: 6px; }
+.age-line.new { color: var(--red, #cf222e); font-weight: 700; }
 .verdict .official-link { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--green-bg); }
 .lv-official, .lv-gov, .lv-trusted { border-color: var(--green); }
 .lv-official .icon, .lv-gov .icon, .lv-trusted .icon { background: var(--green); }
