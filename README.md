@@ -95,7 +95,7 @@ Email 另外會檢查：
 
 ## 安裝擴充功能（尚未上架，用「開發人員模式」載入）
 
-1. 解壓縮 `official-url-guard.zip`。
+1. 到 [Releases 下載頁](https://github.com/judylin0324/official-url-guard/releases/latest) 下載 `official-url-guard-v版本.zip`，按右鍵「解壓縮全部」，得到 `official-url-guard` 資料夾（請放在固定的地方，之後不要刪除或移動）。
 2. Chrome 網址列輸入 `chrome://extensions`（Edge 為 `edge://extensions`）。
 3. 打開右上角「開發人員模式」。
 4. 按「載入未封裝項目」，選擇 `official-url-guard` 資料夾（有 `manifest.json` 的那一層）。
