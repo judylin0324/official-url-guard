@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS = {
   rdap: false, // 自動查詢網域註冊日期（會把網域名稱送到 rdap.org）；關閉時仍可在警告畫面按按鈕查詢
   reportUrl: DEFAULT_REPORT_URL,
   reportScreenshot: true, // 一鍵通報時，把目前網頁截圖存到下載資料夾當證據
+  aiAssist: true, // 電腦上已有 Chrome 內建 AI 模型時，用它判讀頁面自稱的機構（在本機執行，不會上傳）
   autoUpdateLists: true, // 每天從公開來源更新涉詐網域清單（只下載清單，不傳送任何瀏覽資料）
   remoteOfficial: true, // 每天從專案網站更新官方網站清單（通過安全檢查才採用）
   feedUrl: '', // 額外的清單下載網址（選填）
@@ -419,6 +420,67 @@ async function logoCheck(items) {
   return { matches, dbSize: db.length };
 }
 
+// ───────── 裝置端 AI（Chrome 內建的 Gemini Nano）─────────
+// 只在「要你付款或輸入密碼、關鍵字卻找不到自稱機構」時才問 AI；模型在本機執行，網頁內容不會上傳。
+// 只有模型已經下載好才會使用，不會自動下載（模型很大，要使用者在設定頁按下載）。
+const AI_OPTIONS = { expectedInputs: [{ type: 'text', languages: ['en', 'ja'] }], expectedOutputs: [{ type: 'text', languages: ['en'] }] };
+const AI_SYSTEM = 'You help detect impersonation scams on web pages in Taiwan and Japan. Given the visible text of a web page, '
+  + 'identify the organization the page presents itself as (the company, bank, government agency, public program or service whose identity the page uses for itself, '
+  + 'for example in its title, header or greeting). claimedName: copy that name exactly as written on the page (it may be an abbreviation or an English name). '
+  + 'officialName: the full official name of that organization (Traditional Chinese for Taiwanese organizations, Japanese for Japanese ones, otherwise English). '
+  + 'If the page does not present itself as any specific organization, answer null for both. isGovernment is true only when that organization is a government agency or public program. '
+  + 'Use only the text given for claimedName; do not guess.';
+const AI_SCHEMA = {
+  type: 'object',
+  properties: {
+    claimedName: { type: ['string', 'null'] },
+    officialName: { type: ['string', 'null'] },
+    isGovernment: { type: 'boolean' },
+    topic: { type: 'string', enum: ['parking_fee', 'traffic_fine', 'toll', 'parcel', 'tax_refund', 'utility_bill', 'subsidy', 'prize', 'investment', 'account_verification', 'shopping', 'other'] },
+  },
+  required: ['claimedName', 'officialName', 'isGovernment', 'topic'],
+};
+let aiStatusCache = { at: 0, value: null };
+async function aiAvailability() {
+  const LM = globalThis.LanguageModel;
+  if (!LM || typeof LM.availability !== 'function') return 'unsupported';
+  if (aiStatusCache.value && Date.now() - aiStatusCache.at < 10 * 60 * 1000) return aiStatusCache.value;
+  let v;
+  try { v = await LM.availability(AI_OPTIONS); } catch { try { v = await LM.availability(); } catch { v = 'unavailable'; } }
+  aiStatusCache = { at: Date.now(), value: v };
+  return v;
+}
+let aiBase = null;
+const aiCache = new Map();
+async function aiRead(url, text) {
+  if (aiCache.has(url)) return aiCache.get(url);
+  if ((await aiAvailability()) !== 'available') return null;
+  const LM = globalThis.LanguageModel;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 25000);
+  let session = null;
+  try {
+    if (!aiBase) {
+      const init = { initialPrompts: [{ role: 'system', content: AI_SYSTEM }] };
+      try { aiBase = await LM.create({ ...AI_OPTIONS, ...init }); } catch { aiBase = await LM.create(init); }
+    }
+    session = typeof aiBase.clone === 'function' ? await aiBase.clone({ signal: ctrl.signal }) : aiBase;
+    const raw = await session.prompt(`Web page text (between <page> and </page>):\n<page>\n${text}\n</page>`, { responseConstraint: AI_SCHEMA, signal: ctrl.signal });
+    const j = JSON.parse(String(raw).replace(/^```(?:json)?|```$/g, '').trim());
+    const clean = (v) => { const t = typeof v === 'string' ? v.trim() : ''; return t && !/^(null|none|n\/a|unknown|無|なし)$/i.test(t) ? t.slice(0, 80) : null; };
+    const org = clean(j.claimedName);
+    const res = { org, official: org ? clean(j.officialName) : null, isGov: Boolean(org && j.isGovernment === true), topic: typeof j.topic === 'string' ? j.topic.slice(0, 40) : 'other' };
+    aiCache.set(url, res);
+    if (aiCache.size > 200) aiCache.delete(aiCache.keys().next().value);
+    return res;
+  } catch {
+    return null; // 模型忙碌、逾時或回答格式不對：當作沒有 AI 結果
+  } finally {
+    clearTimeout(timer);
+    if (session && session !== aiBase && typeof session.destroy === 'function') session.destroy();
+  }
+}
+
 // ───────── 一鍵通報 ─────────
 function buildReportText(v, title, extra = {}) {
   const time = new Date().toLocaleString('zh-TW', { hour12: false });
@@ -636,7 +698,10 @@ async function handle(msg, sender) {
         }
       }
       const { dismissed = {}, submitOk = {} } = await chrome.storage.session.get(['dismissed', 'submitOk']);
-      return { verdict, settings: st.settings, allowed: await isAllowed(verdict.host), dismissed: Boolean(dismissed[verdict.host]), submitOk: Boolean(submitOk[verdict.host]) };
+      // 要錢或要密碼、卻找不到自稱機構：可以請裝置端 AI 再讀一次
+      const aiEligible = Boolean(st.settings.aiAssist !== false && !msg.signals.ai && verdict.page && (verdict.page.asks.length || verdict.page.creds.length)
+        && !verdict.page.claim && !verdict.impersonating && verdict.level !== 'danger' && (await aiAvailability()) === 'available');
+      return { verdict, settings: st.settings, allowed: await isAllowed(verdict.host), dismissed: Boolean(dismissed[verdict.host]), submitOk: Boolean(submitOk[verdict.host]), aiEligible };
     }
 
     case 'scanLinks': {
@@ -698,6 +763,16 @@ async function handle(msg, sender) {
     case 'prepareReport':
       return prepareReport(msg.url, msg.title, { tabId, capture: Boolean(msg.capture) });
 
+    case 'aiRead': {
+      const s = msg.signals || {};
+      const text = [s.title, s.siteName, s.identityText, s.bodyText].filter(Boolean).join('\n').slice(0, 3000);
+      return { ai: text.length > 20 ? await aiRead((sender.tab && sender.tab.url) || s.url, text) : null };
+    }
+
+    case 'aiStatus':
+      if (msg.fresh) aiStatusCache = { at: 0, value: null };
+      return { status: await aiAvailability(), enabled: st.settings.aiAssist !== false };
+
     case 'logoCheck':
       return logoCheck(msg.items);
 
@@ -757,4 +832,4 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // 給自動化測試用
-globalThis.__oug = { assess, getState, buildReportText, syncBlockRules, update165, domainAge, updateLogos };
+globalThis.__oug = { assess, getState, buildReportText, syncBlockRules, update165, domainAge, updateLogos, resetAi: () => { aiBase = null; aiCache.clear(); aiStatusCache = { at: 0, value: null }; } };

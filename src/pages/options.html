@@ -58,6 +58,14 @@
     </section>
 
     <section>
+      <h2>裝置端 AI 判讀（實驗功能）</h2>
+      <p>用 Chrome 內建的 AI 模型（Gemini Nano）讀網頁，找出關鍵字抓不到的冒名寫法，例如簡稱、英文名稱、新的說法。模型在你的電腦上執行，網頁內容不會上傳。</p>
+      <label class="toggle"><input type="checkbox" data-setting="aiAssist"><span>使用裝置端 AI<small>只在網頁要你付款或輸入密碼、卻看不出它自稱是誰時才會用。AI 說的機構名稱必須在網頁上找得到，避免它憑空猜測。</small></span></label>
+      <div class="stat" id="aiStat">檢查中…</div>
+      <div class="row"><button class="btn primary small" id="aiDownload" hidden>下載 AI 模型</button><span id="aiMsg" class="muted"></span></div>
+    </section>
+
+    <section>
       <h2>涉詐網域清單（165、TWNIC）</h2>
       <p>政府與民間公開的詐騙網址清單。清單上的網站在連線前就會被攔下，連一個封包都不會送出。很多假投資網站取的是自己的名字，只能靠這份清單攔截。</p>
       <div class="stat" id="blStat">尚未下載</div>

@@ -241,6 +241,19 @@
     return c.toDataURL('image/png');
   }
 
+  // ───────── 裝置端 AI：關鍵字找不到自稱機構時，請 Chrome 內建模型讀一次（在本機執行）─────────
+  let aiResult = null;
+  let aiAsked = false;
+  async function askAi() {
+    if (aiAsked) return;
+    aiAsked = true;
+    const res = await send({ type: 'aiRead', signals: collectSignals() });
+    if (res && res.ai && res.ai.org) {
+      aiResult = res.ai;
+      if (!overlayShown) { checks = Math.min(checks, MAX_CHECKS - 1); check(); }
+    }
+  }
+
   // ───────── 網站圖示、頁首 Logo：交給背景和官網 Logo 指紋比對 ─────────
   let logoMatches = [];
   let logoChecked = false;
@@ -336,6 +349,7 @@
       exfilLive,
       qr: qrTexts.slice(0, 10),
       logo: logoMatches,
+      ai: aiResult,
     };
   }
 
@@ -726,6 +740,7 @@
       if (res.submitOk) submitOk = true;
       // 要你付款或輸入密碼的網頁，再比對網站圖示與 Logo 是不是抄官網的
       if (!logoChecked && v.page && (v.page.asks.length || v.page.creds.length) && v.level !== 'danger') checkLogos();
+      if (res.aiEligible && !aiAsked) askAi();
       if (allowed) {
         if (v.level === 'danger') showBar(v, true);
       } else if (v.level === 'danger' && settings.pageGuard) {

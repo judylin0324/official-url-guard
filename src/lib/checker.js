@@ -831,6 +831,19 @@ function logoCopy(matches, ctx, base) {
   return null;
 }
 
+/**
+ * 裝置端 AI 說「頁面自稱是 X」時，X 必須在網頁文字裡找得到根據（避免 AI 憑空捏造）：
+ * 中文名稱至少四成的字出現在網頁上（「北市停管處」對「臺北市停車管理工程處」），英文名稱至少一個 4 個字母以上的字出現在網頁上
+ */
+export function aiGrounded(org, text) {
+  const t = String(text || '').toLowerCase().replace(/臺/g, '台');
+  const o = String(org || '').toLowerCase().replace(/臺/g, '台');
+  const cjk = [...new Set(o.match(/[\u3400-\u9fff\u3040-\u30ff]/g) || [])];
+  if (cjk.length >= 2) return cjk.filter((c) => t.includes(c)).length / cjk.length >= 0.4;
+  const STOP = new Set(['bank', 'card', 'service', 'services', 'center', 'centre', 'office', 'company', 'corporation', 'limited', 'government', 'online', 'official', 'payment']);
+  return (o.match(/[a-z]{4,}/g) || []).some((w) => !STOP.has(w) && t.includes(w));
+}
+
 /** 文字裡的金額（NT$120、120 元、120円），回傳最小的正數 */
 function smallestAmount(text) {
   let min = null;
@@ -855,6 +868,7 @@ function smallestAmount(text) {
  *   exfilLive 網頁程式把剛輸入的卡號／驗證碼傳出去 { host, kind: card|otp, beforeSubmit }（只有目的網域與是非值）
  *   qr      網頁上 QR Code 解碼出來的文字（背景解碼）
  *   logo    網站圖示、頁首 Logo 和官網 Logo 指紋相同的結果 [{ site, domain, gov, kind: icon|logo, distance }]
+ *   ai      裝置端 AI 判讀頁面自稱的機構 { org: 網頁上的寫法, official: 正式名稱, isGov, topic }（Chrome 內建模型；只在關鍵字找不到時使用）
  * @param {object} ctx
  * @param {object} base assessUrl() 的結果
  */
@@ -901,6 +915,18 @@ export function assessPage(signals, ctx, base) {
   // 抄襲官網的痕跡：就算機構名稱做成圖片、文字讀不到，也等於自稱是那個官網
   const copied = copiedFrom(signals.copy, ctx, base) || logoCopy(signals.logo, ctx, base);
   if (!claim && copied && copied.site) claim = { display: copied.site.name, site: copied.site, viaCopy: true };
+  // 裝置端 AI 判讀（只有關鍵字找不到自稱機構時才會有；名稱要在網頁上找得到根據）
+  let aiClaim = null, aiGov = null;
+  const ai = signals.ai && signals.ai.org && aiGrounded(signals.ai.org, `${signals.title || ''}\n${rawBody}`) ? signals.ai : null;
+  if (!claim && ai) {
+    // 先用 AI 給的正式名稱對照官方清單（「北市停管」→ 臺北市停車管理工程處），再用網頁上的寫法
+    for (const name of [ai.official, ai.org].filter(Boolean)) {
+      const n = normText(name), lower = String(name).toLowerCase();
+      aiClaim = ctx.claims.find((c) => c.alias && n.includes(c.alias)) || ctx.claims.find((c) => c.re && c.re.test(lower)) || null;
+      if (aiClaim) break;
+    }
+    if (!aiClaim && ai.isGov) aiGov = String(ai.official || ai.org).slice(0, 40);
+  }
   // 補助名目（運動幣、普發現金…）本身就代表「自稱政府」
   const govProgram = findAny(allNorm, GOV_PROGRAMS)[0] || null;
   const govStrong = findAny(identityText, GOV_ALIASES)[0] || null;
@@ -948,6 +974,17 @@ export function assessPage(signals, ctx, base) {
     add(55, `頁面以「${payThemes.slice(0, 2).join('、')}」等名義要你提供${asksText}，但網址 ${base.displayHost} 不在官方清單中`);
   } else if (money) {
     add(35, `這個頁面要你提供${asksText}，但網址 ${base.displayHost} 不在官方清單中，付款前請再次確認網址`);
+  }
+
+  if (!claim && !govStrong && !govProgram && (aiClaim || aiGov)) {
+    const what = [...new Set([...asks, ...creds])].join('、');
+    if (aiClaim && (money || (creds.length && aiClaim.site.sensitive))) {
+      add(money ? 70 : 60, `裝置端 AI 判讀：頁面自稱是「${ai.org}」（${aiClaim.site.name}），要你提供${what}，但網址 ${base.displayHost} 不是官方網址（官方是 ${aiClaim.site.domains[0]}）`);
+      if (!impersonating) impersonating = { name: aiClaim.site.name, domain: aiClaim.site.domains[0], url: officialUrl(aiClaim.site) };
+    } else if (aiGov && (money || strongCreds)) {
+      add(65, `裝置端 AI 判讀：頁面以政府機關「${aiGov}」的名義要你提供${what}，但網址不是政府網域（政府網站以 .gov.tw 結尾）`);
+      if (!impersonating) impersonating = govImp(aiGov);
+    }
   }
 
   if (creds.length && ((claim && claim.site.sensitive) || govStrong || (govProgram && strongCreds))) {
@@ -1083,6 +1120,7 @@ export function assessPage(signals, ctx, base) {
       asks, creds, claim: claim ? claim.site.name : govStrong || govProgram, themes: themes.slice(0, 5), weight, apk: Boolean(links.apk),
       investment: guarantee.length > 0, copied: copied ? copied.how : null, gateway: gatewayName || null, amount,
       qr: qr.items.length ? qr.items.slice(0, 5) : null,
+      ai: ai ? { org: ai.org, matched: aiClaim ? aiClaim.site.name : aiGov ? '政府機關' : null } : null,
       // 有要錢或要秘密、而且判定可疑以上時，告訴使用者正確的繳費管道
       channels: (money || creds.length || themes.length) ? paymentChannels(`${rawAll}\n${themes.join(' ')}`, claim && claim.site) : null,
     },

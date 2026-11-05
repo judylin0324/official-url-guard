@@ -94,6 +94,12 @@ PAGES['card-verify-tw.com'] = `<!doctype html><html><head><meta charset="utf-8">
   <header><img src="https://img-cdn-mock.net/fav.png" width="120" height="60" alt=""></header><main><h1>安全驗證</h1><p>為保障您的權益，請輸入卡號完成驗證。</p>
   <label for="c">卡號</label><input id="c"></main></body></html>`;
 
+// 裝置端 AI：網銀登入頁只寫英文簡稱「MEGA ICBC」，關鍵字看不出是哪家銀行
+PAGES['secure-member-login.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>Member Login</title>${style}</head><body><header>MEGA ICBC</header>
+  <main><h1>Member Login</h1><p>Please enter your user ID, password and SMS verification code to continue.</p>
+  <label for="u">User ID</label><input id="u"><label for="p">Password</label><input id="p" type="password">
+  <label for="o">SMS verification code</label><input id="o" autocomplete="one-time-code"></main></body></html>`;
+
 // 模擬 RDAP：tw-parking-pay.com 5 天前才註冊
 const FIVE_DAYS_AGO = new Date(Date.now() - 5 * 86400000 - 3600000).toISOString();
 const rdapRequests = [];
@@ -447,6 +453,40 @@ await page.goto('https://card-verify-tw.com/');
 await settle(3500);
 const v13h = await verdictOf(page);
 check('網站圖示是中國信託的 Logo、要你輸入卡號 → 危險（頁面文字沒提到銀行）', v13h?.level === 'danger' && /中國信託.*圖片比對/.test(v13h?.reasons?.[0]?.text || '') && v13h?.impersonating?.domain === 'ctbcbank.com', v13h?.reasons?.[0]?.text);
+
+// 13i. 裝置端 AI（測試環境沒有 Chrome 內建模型，用模擬的 LanguageModel 代替；真實模型只在使用者電腦上）
+await sw.evaluate(() => {
+  globalThis.__aiCalls = [];
+  globalThis.LanguageModel = {
+    availability: async () => 'available',
+    create: async () => ({
+      clone: async function () { return this; },
+      destroy() {},
+      prompt: async (text, opts) => {
+        globalThis.__aiCalls.push({ len: text.length, schema: Object.keys((opts && opts.responseConstraint && opts.responseConstraint.properties) || {}) });
+        return JSON.stringify(text.includes('MEGA ICBC')
+          ? { claimedName: 'MEGA ICBC', officialName: '兆豐國際商業銀行', isGovernment: false, topic: 'account_verification' }
+          : { claimedName: null, officialName: null, isGovernment: false, topic: 'other' });
+      },
+    }),
+  };
+  globalThis.__oug.resetAi();
+});
+await page.goto('https://secure-member-login.com/');
+await settle(3500);
+const v13i = await verdictOf(page);
+const aiCalls = await sw.evaluate(() => globalThis.__aiCalls);
+check('關鍵字看不出自稱誰的網銀登入頁：裝置端 AI 判讀為兆豐銀行 → 危險', v13i?.level === 'danger' && /裝置端 AI 判讀.*兆豐/.test(v13i?.reasons?.[0]?.text || ''), v13i?.reasons?.[0]?.text);
+check('AI 只讀一次、要求固定格式回答', aiCalls.length === 1 && aiCalls[0].schema.includes('officialName'), JSON.stringify(aiCalls));
+await page.goto('https://www.mvdis.gov.tw/');
+await settle(1500);
+check('官方網站不會交給 AI', (await sw.evaluate(() => globalThis.__aiCalls.length)) === 1);
+const optAi = await context.newPage();
+await optAi.goto(`chrome-extension://${extId}/src/pages/options.html`);
+await settle(800);
+check('設定頁顯示裝置端 AI 可以使用', (await optAi.textContent('#aiStat')).includes('可以使用'));
+await optAi.close();
+await sw.evaluate(() => { delete globalThis.LanguageModel; globalThis.__oug.resetAi(); });
 
 // 13f. 彈出視窗：顯示正確繳費管道、查註冊日期
 const parkTab = await context.newPage();

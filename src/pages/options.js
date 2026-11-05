@@ -177,4 +177,37 @@ async function init() {
   }
 }
 
+// 裝置端 AI 狀態與模型下載（模型很大，只在使用者按下按鈕時才下載）
+const AI_TEXT = {
+  unsupported: '這台電腦的 Chrome 沒有內建 AI（需要較新版本的 Chrome 與足夠的硬體）。其他防護照常運作。',
+  unavailable: '這台電腦目前無法使用 Chrome 內建 AI（可能是硬體、儲存空間或 Chrome 設定的限制）。其他防護照常運作。',
+  downloadable: '模型還沒下載（檔案很大，約需數 GB 空間）。按下方按鈕下載後就會自動使用。',
+  downloading: '模型下載中，完成後就會自動使用。',
+  available: '✓ 可以使用。',
+};
+async function renderAi(fresh) {
+  const r = await chrome.runtime.sendMessage({ type: 'aiStatus', fresh: Boolean(fresh) });
+  const status = (r && r.status) || 'unsupported';
+  $('aiStat').textContent = AI_TEXT[status] || AI_TEXT.unavailable;
+  $('aiDownload').hidden = !(status === 'downloadable' && typeof LanguageModel !== 'undefined');
+}
+$('aiDownload').addEventListener('click', async () => {
+  $('aiDownload').disabled = true;
+  $('aiMsg').textContent = '開始下載…';
+  try {
+    const session = await LanguageModel.create({
+      expectedInputs: [{ type: 'text', languages: ['en', 'ja'] }],
+      expectedOutputs: [{ type: 'text', languages: ['en'] }],
+      monitor(m) { m.addEventListener('downloadprogress', (e) => { $('aiMsg').textContent = `下載中 ${Math.round((e.loaded || 0) * 100)}%`; }); },
+    });
+    session.destroy();
+    $('aiMsg').textContent = '下載完成';
+  } catch (e) {
+    $('aiMsg').textContent = `無法下載：${e.message}`;
+  }
+  $('aiDownload').disabled = false;
+  renderAi(true);
+});
+
 init();
+renderAi();
