@@ -678,6 +678,85 @@ function findCrypto(text) {
   return null;
 }
 
+// ───────── 網頁上的 QR Code ─────────
+/** EMVCo 付款碼（000201 開頭）：讀出收款商家名稱與金額 */
+function parseEmv(t) {
+  const out = {};
+  let i = 0;
+  while (i + 4 <= t.length) {
+    const id = t.slice(i, i + 2), len = Number(t.slice(i + 2, i + 4));
+    if (!/^\d{2}$/.test(id) || !Number.isInteger(len)) return null;
+    const v = t.slice(i + 4, i + 4 + len);
+    if (v.length !== len) return null;
+    if (id === '59') out.merchant = v.trim();
+    if (id === '54') out.amount = v;
+    if (id === '53') out.currency = v;
+    i += 4 + len;
+  }
+  return i === t.length ? out : null;
+}
+
+/**
+ * 分析網頁上 QR Code 的內容（由背景解碼後傳進來的文字）
+ * @returns {{ urls: string[], pay: object|null, crypto: string|null, lineIds: string[], chat: number, items: {kind: string, display: string}[] }}
+ */
+export function analyzeQr(texts) {
+  const out = { urls: [], pay: null, crypto: null, lineIds: [], chat: 0, items: [] };
+  for (const raw of (texts || []).slice(0, 10)) {
+    const t = String(raw || '').trim().slice(0, 4000);
+    if (!t) continue;
+    if (/^TWQRP:\/\//i.test(t)) {
+      out.pay = out.pay || { kind: 'TWQR', display: '台灣 Pay（TWQR）付款／轉帳碼' };
+      out.items.push({ kind: 'pay', display: '台灣 Pay（TWQR）付款／轉帳碼' });
+      continue;
+    }
+    if (/^000201/.test(t)) {
+      const emv = parseEmv(t);
+      if (emv) {
+        const display = `行動支付付款碼${emv.merchant ? `（收款方：${emv.merchant}）` : ''}${emv.amount ? `，金額 ${emv.amount}` : ''}`;
+        out.pay = out.pay || { kind: 'EMV', merchant: emv.merchant || null, amount: emv.amount || null, display };
+        out.items.push({ kind: 'pay', display });
+        continue;
+      }
+    }
+    // 加密貨幣錢包（只有地址，或 bitcoin:、ethereum:、tron: 開頭）
+    const wallet = t.replace(/^(bitcoin|ethereum|tron|usdt):/i, '').split(/[?&]/)[0];
+    const cryptoKind = /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(wallet) ? 'TRON（USDT-TRC20）錢包地址'
+      : /^0x[a-fA-F0-9]{40}$/.test(wallet) ? '以太坊（ERC20）錢包地址'
+        : /^(bc1[a-z0-9]{25,59}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/.test(wallet) ? '比特幣錢包地址' : null;
+    if (cryptoKind) {
+      out.crypto = out.crypto || cryptoKind;
+      out.items.push({ kind: 'crypto', display: cryptoKind });
+      continue;
+    }
+    const lineScheme = t.match(/^line:\/\/ti\/p\/([^/?#\s]+)/i);
+    if (lineScheme) {
+      const id = normalizeLineId(decodeURIComponent(lineScheme[1]));
+      if (id) out.lineIds.push(id);
+      out.chat++;
+      out.items.push({ kind: 'chat', display: `LINE 加好友${id ? `（${id}）` : ''}` });
+      continue;
+    }
+    const m = t.match(/^(https?:\/\/[^\s"'<>]+)/i) || t.match(/^((?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s"'<>]*)?)$/i);
+    if (m) {
+      const url = /^https?:/i.test(m[1]) ? m[1] : 'https://' + m[1];
+      let u;
+      try { u = new URL(url); } catch { continue; }
+      const id = lineIdFromUrl(u);
+      if (id || /^(lin\.ee|liff\.line\.me|t\.me)$/i.test(u.hostname) || (/^(www\.)?line\.me$/i.test(u.hostname) && /^\/(R\/)?ti\//i.test(u.pathname))) {
+        if (id) out.lineIds.push(id);
+        out.chat++;
+        out.items.push({ kind: 'chat', display: `${u.hostname === 't.me' ? 'Telegram' : 'LINE'} 加好友${id ? `（${id}）` : ''}` });
+      }
+      out.urls.push(url);
+      out.items.push({ kind: 'url', display: url.slice(0, 120) });
+      continue;
+    }
+    out.items.push({ kind: 'text', display: t.slice(0, 60) });
+  }
+  return out;
+}
+
 /** host 本身或上層網域在清單（物件或陣列）中 */
 function hostIn(host, list) {
   if (!host) return null;
@@ -760,6 +839,7 @@ function smallestAmount(text) {
  *   copy    抄襲痕跡 { canonical, ogUrl, baseHref, resources: [{ host, kind: img|css|script|icon, logo }] }
  *   gateways 網頁裡嵌入的 iframe 網域（正規金流的刷卡欄位放在 iframe 裡）
  *   exfilLive 網頁程式把剛輸入的卡號／驗證碼傳出去 { host, kind: card|otp, beforeSubmit }（只有目的網域與是非值）
+ *   qr      網頁上 QR Code 解碼出來的文字（背景解碼）
  * @param {object} ctx
  * @param {object} base assessUrl() 的結果
  */
@@ -768,7 +848,10 @@ export function assessPage(signals, ctx, base) {
   const f = { ...(signals.fields || {}) };
   if (signals.typed && signals.typed.card) f.card = true;
   if (signals.typed && signals.typed.idNumber) f.idNumber = true;
-  const links = signals.links || {};
+  const qr = analyzeQr(signals.qr);
+  const links = { ...(signals.links || {}) };
+  if (qr.lineIds.length) links.lineIds = [...(links.lineIds || []), ...qr.lineIds];
+  if (qr.chat) links.chat = (links.chat || 0) + qr.chat;
   const titleText = normText(`${signals.title || ''} ${signals.siteName || ''}`);
   const identityText = titleText + normText(signals.identityText);
   const bodyNorm = normText(signals.bodyText);
@@ -785,6 +868,8 @@ export function assessPage(signals, ctx, base) {
   if (transfer) asks.push('轉帳／匯款');
   if (storeCode) asks.push('超商代碼繳費');
   if (crypto) asks.push('虛擬貨幣轉帳');
+  if (qr.pay) asks.push('掃碼付款／轉帳');
+  if (qr.crypto && !crypto) asks.push('虛擬貨幣轉帳');
   const money = asks.length > 0;
   const creds = [];
   if (f.password) creds.push('密碼');
@@ -912,6 +997,25 @@ export function assessPage(signals, ctx, base) {
     }
   }
 
+  // QR Code：連到哪裡、掃了會付錢給誰
+  const seenQr = new Set();
+  for (const url of qr.urls.slice(0, 5)) {
+    const qv = assessUrl(url, ctx);
+    if (!qv.host || seenQr.has(qv.registrable) || qv.registrable === base.registrable) continue;
+    seenQr.add(qv.registrable);
+    const why = (qv.reasons.find((r) => r.weight > 0) || {}).text;
+    if (qv.level === 'danger') {
+      add(qv.source === 'list' ? 90 : 70, `頁面上的 QR Code 連到 ${qv.displayHost}${why ? `：${why}` : ''}`);
+      if (!impersonating && qv.impersonating) impersonating = qv.impersonating;
+    } else if (qv.level === 'caution') {
+      add(25, `頁面上的 QR Code 連到可疑網站 ${qv.displayHost}${why ? `（${why}）` : ''}`);
+    } else if (['official', 'gov'].includes(qv.level)) {
+      reasons.push({ text: `頁面上的 QR Code 連到官方網站 ${qv.registrable}`, weight: 0 });
+    }
+  }
+  if (qr.pay) reasons.push({ text: `頁面上的 QR Code 是${qr.pay.display}，掃了就會付錢或轉帳`, weight: 0 });
+  if (qr.crypto) reasons.push({ text: `頁面上的 QR Code 是${qr.crypto}`, weight: 0 });
+
   // 正規金流 vs 自製刷卡表單
   const gatewayName = (signals.gateways || []).map((h) => hostIn(h, GATEWAY_HOSTS)).find(Boolean);
   if (f.card && !gatewayName) {
@@ -959,6 +1063,7 @@ export function assessPage(signals, ctx, base) {
     page: {
       asks, creds, claim: claim ? claim.site.name : govStrong || govProgram, themes: themes.slice(0, 5), weight, apk: Boolean(links.apk),
       investment: guarantee.length > 0, copied: copied ? copied.how : null, gateway: gatewayName || null, amount,
+      qr: qr.items.length ? qr.items.slice(0, 5) : null,
       // 有要錢或要秘密、而且判定可疑以上時，告訴使用者正確的繳費管道
       channels: (money || creds.length || themes.length) ? paymentChannels(`${rawAll}\n${themes.join(' ')}`, claim && claim.site) : null,
     },

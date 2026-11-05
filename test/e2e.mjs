@@ -61,6 +61,22 @@ PAGES['handmade-goods.com'] = `<!doctype html><html><head><meta charset="utf-8">
 // 正規金流：刷卡欄位放在 TapPay 的 iframe 裡
 PAGES['gateway-shop.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>結帳</title>${style}</head><body><header>結帳</header>
   <main><p>信用卡付款</p><iframe src="https://js.tappaysdk.com/fields/card.html" width="300" height="40"></iframe></main></body></html>`;
+// QR Code 繳費頁：跨網域的 PNG（台灣 Pay 轉帳碼）、data: 圖片（連到仿冒監理網址）、SVG（LINE 加好友）
+const { encodeQr, toRgba, toPng } = await import('./qr-encode.mjs');
+const QR_TWQR = toPng(toRgba(encodeQr('TWQRP://個人轉帳/158/02/V1?D1=60'), { scale: 5 }));
+const QR_URL = 'data:image/png;base64,' + toPng(toRgba(encodeQr('https://www.mvdis.gov.tw.pay-fine.top/'), { scale: 4 })).toString('base64');
+const svgQr = (text) => {
+  const m = encodeQr(text), n = m.length;
+  let rects = '';
+  m.forEach((row, y) => row.forEach((v, x) => { if (v) rects += `<rect x="${x + 4}" y="${y + 4}" width="1" height="1"/>`; }));
+  return `<svg width="${(n + 8) * 5}" height="${(n + 8) * 5}" viewBox="0 0 ${n + 8} ${n + 8}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><g fill="#000">${rects}</g></svg>`;
+};
+PAGES['parking-qr-pay.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>停車費線上繳納</title>${style}</head><body><header>臺北市停車管理工程處</header>
+  <main><h1>停車費補繳</h1><p>請使用行動支付 App 掃描下方 QR Code 繳納停車費 NT$ 60。</p>
+  <img src="https://cdn-qrimg.net/pay/abc.png" width="185" height="185" alt="">
+  <p>或掃描查詢罰單明細：</p><img src="${QR_URL}" width="150" height="150" alt="">
+  <p>客服 LINE 加好友：</p>${svgQr('https://line.me/ti/p/~scam-line-tw')}</main></body></html>`;
+
 // 模擬 RDAP：tw-parking-pay.com 5 天前才註冊
 const FIVE_DAYS_AGO = new Date(Date.now() - 5 * 86400000 - 3600000).toISOString();
 const rdapRequests = [];
@@ -87,7 +103,9 @@ const context = await chromium.launchPersistentContext(userDataDir, {
   locale: 'zh-TW',
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`,
     // 有代理伺服器的環境（例如雲端測試機）讓清單下載走代理；其他網頁一律用下方的模擬頁
-    ...(process.env.HTTPS_PROXY ? [`--proxy-server=${process.env.HTTPS_PROXY}`] : [])],
+    ...(process.env.HTTPS_PROXY ? [`--proxy-server=${process.env.HTTPS_PROXY}`]
+      // 沒有代理時（例如 GitHub Actions）在瀏覽器層擋掉真實網站，確保不會連到任何真實網站
+      : ['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE raw.githubusercontent.com, EXCLUDE data.moi.gov.tw'])],
 });
 // 模擬專案網站上的官方清單（線上更新測試用）
 const { OFFICIAL_SITES } = await import('../src/data/official-sites.js');
@@ -98,6 +116,7 @@ await context.route('**/*', (route) => {
   const u = new URL(route.request().url());
   requestedHosts.add(u.hostname);
   if (!/^https?:$/.test(u.protocol)) return route.continue();
+  if (u.hostname === 'cdn-qrimg.net') return route.fulfill({ status: 200, contentType: 'image/png', body: QR_TWQR });
   if (u.hostname === 'rdap.org') {
     rdapRequests.push(u.pathname);
     if (u.pathname === '/domain/tw-parking-pay.com') {
@@ -127,6 +146,18 @@ await sw.evaluate(async () => {
 });
 
 const page = await context.newPage();
+// 擴充功能自己開的分頁（通報網站、GitHub Issue）在某些環境下會略過 context.route 的模擬頁；這時再用 Playwright 開一次模擬頁
+const REPORT_URL = 'https://fraudbuster.digiat.org.tw/accessibility/index';
+async function ensureMock(p, url) {
+  await p.waitForLoadState('domcontentloaded').catch(() => {});
+  if (!(await p.title().catch(() => '')).includes('模擬')) await p.goto(url).catch(() => {});
+}
+// 記錄擴充功能要求開啟的網址（GitHub 會把沒登入的人轉到登入頁，所以檢查「要求開啟的網址」）
+await sw.evaluate(() => {
+  globalThis.__opened = [];
+  const create = chrome.tabs.create.bind(chrome.tabs);
+  chrome.tabs.create = (opts, ...rest) => { globalThis.__opened.push(opts && opts.url); return create(opts, ...rest); };
+});
 const tabIdOf = async (p) => sw.evaluate(async (u) => (await chrome.tabs.query({})).find((t) => t.url === u || t.pendingUrl === u)?.id, p.url());
 const verdictOf = async (p) => sw.evaluate(async (id) => (await chrome.storage.session.get('verdict:' + id))['verdict:' + id], await tabIdOf(p));
 const overlayVisible = (p) => p.evaluate(() => !!document.querySelector('official-url-guard'));
@@ -194,7 +225,7 @@ await page.screenshot({ path: path.join(SHOTS, '2b-parking-age.png') });
 // 一鍵通報附截圖：截圖存到下載資料夾，通報內容註明
 await page.bringToFront();
 const [rp2] = await Promise.all([context.waitForEvent('page'), uiClick(page, 'report')]);
-await rp2.waitForLoadState();
+await ensureMock(rp2, REPORT_URL);
 await settle(2500);
 // （Playwright 會把下載的檔案改成隨機檔名，所以檢查下載紀錄與通報內容裡的檔名）
 const dl = await sw.evaluate(async () => (await chrome.downloads.search({ orderBy: ['-startTime'] })).map((d) => ({ by: d.byExtensionId, state: d.state, bytes: d.totalBytes || d.bytesReceived, mime: d.mime })));
@@ -266,7 +297,7 @@ await page.goto('https://ctbc-bank.top/login').catch(() => {});
 await waitUrl(page, /warning\.html/);
 await settle(800);
 const [reportPage] = await Promise.all([context.waitForEvent('page'), page.click('#report')]);
-await reportPage.waitForLoadState();
+await ensureMock(reportPage, REPORT_URL);
 await settle(2500);
 const filled = await reportPage.inputValue('#u').catch(() => '');
 check('一鍵通報：開啟網詐通報網站並自動填入可疑網址', filled === 'https://ctbc-bank.top/login', filled);
@@ -278,7 +309,7 @@ await waitUrl(page, /warning\.html/);
 await settle(800);
 const [issuePage] = await Promise.all([context.waitForEvent('page'), page.click('#falsePositive')]);
 await settle(800);
-const issueHref = decodeURIComponent(issuePage.url());
+const issueHref = decodeURIComponent((await sw.evaluate(() => globalThis.__opened.filter((u) => /github\.com/.test(u)).pop())) || issuePage.url());
 check('回報誤判開啟 GitHub Issue 表單並帶入網址', issueHref.startsWith('https://github.com/judylin0324/official-url-guard/issues/new') && issueHref.includes('url=https://ctbc-bank.top/login'), issueHref.slice(0, 160));
 check('回報內容不含網址查詢參數（避免公開個資）', !issueHref.includes('secret123'));
 await issuePage.close();
@@ -377,6 +408,16 @@ await page.goto('https://gateway-shop.com/checkout');
 await settle();
 const v13e = await verdictOf(page);
 check('辨識正規金流（TapPay）的刷卡欄位', v13e?.page?.gateway === 'TapPay', JSON.stringify(v13e?.page?.gateway));
+
+// 13g. 網頁上的 QR Code：冒名停管處的轉帳碼、連到仿冒網址、LINE 加好友
+await page.goto('https://parking-qr-pay.com/');
+await settle(3500);
+const v13g = await verdictOf(page);
+const qrKinds = (v13g?.page?.qr || []).map((q) => q.kind).sort().join(',');
+check('解出網頁上三種 QR Code（跨網域 PNG、內嵌圖片、SVG）', qrKinds === 'chat,pay,url,url', JSON.stringify(v13g?.page?.qr));
+check('冒名停管處、只放 QR Code 轉帳碼的繳費頁判為危險', v13g?.level === 'danger' && v13g.page.asks.includes('掃碼付款／轉帳'), v13g?.reasons?.[0]?.text);
+check('指出 QR Code 連到仿冒監理服務網的網址', v13g?.reasons?.some((r) => /QR Code 連到 www\.mvdis\.gov\.tw\.pay-fine\.top/.test(r.text)));
+await page.screenshot({ path: path.join(SHOTS, '13-qr-overlay.png') });
 
 // 13f. 彈出視窗：顯示正確繳費管道、查註冊日期
 const parkTab = await context.newPage();

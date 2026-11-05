@@ -210,6 +210,73 @@
   // 網頁程式偷傳卡號（由 page-watch.js 在網頁環境內比對後回報；只有目的網域與是非值）
   let exfilLive = null;
 
+  // ───────── 網頁上的 QR Code：找出像 QR Code 的圖片，交給背景解碼 ─────────
+  const qrTexts = [];
+  const qrTried = new WeakSet();
+  let qrBudget = 24; // 每個網頁最多解碼幾張圖
+  const QR_HINT = /掃碼|掃描|掃一掃|QR|條碼|行動支付|台灣\s*Pay|LINE\s*Pay|街口|付款|繳費|繳納|轉帳|匯款|加好友|支付|領取|scan|pay/i;
+  const squareish = (w, h) => w >= 48 && h >= 48 && w / h > 0.5 && w / h < 2;
+
+  async function toDataUrl(el) {
+    const c = document.createElement('canvas');
+    if (el instanceof HTMLCanvasElement) return el.toDataURL('image/png'); // 被跨網域圖片污染時會丟出例外
+    let src = el;
+    let w = el.naturalWidth || el.width, h = el.naturalHeight || el.height;
+    if (el instanceof SVGSVGElement) {
+      const r = el.getBoundingClientRect();
+      w = Math.round(r.width) * 3; h = Math.round(r.height) * 3;
+      const xml = new XMLSerializer().serializeToString(el);
+      src = new Image();
+      src.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml.includes('xmlns=') ? xml : xml.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'));
+      await src.decode();
+    }
+    const scale = Math.min(1, 1200 / Math.max(w, h));
+    c.width = Math.max(1, Math.round(w * scale));
+    c.height = Math.max(1, Math.round(h * scale));
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, c.width, c.height);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(src, 0, 0, c.width, c.height);
+    return c.toDataURL('image/png');
+  }
+
+  async function scanQr() {
+    if (!deepCheck || qrBudget <= 0 || !document.body) return;
+    const text = (document.body.innerText || '').slice(0, 20000) + document.title;
+    if (!QR_HINT.test(text)) return;
+    const cands = [];
+    for (const img of [...document.images].slice(0, 300)) {
+      if (qrTried.has(img) || !img.complete || !img.naturalWidth) continue;
+      if (!squareish(img.naturalWidth, img.naturalHeight) || !squareish(img.width || img.naturalWidth, img.height || img.naturalHeight)) continue;
+      cands.push(img);
+    }
+    for (const el of [...document.querySelectorAll('canvas, svg')].slice(0, 100)) {
+      if (qrTried.has(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (!squareish(r.width, r.height)) continue;
+      if (el instanceof SVGSVGElement && el.querySelectorAll('rect, path').length < 1) continue;
+      cands.push(el);
+    }
+    const items = [];
+    for (const el of cands.slice(0, Math.min(8, qrBudget))) {
+      qrTried.add(el);
+      qrBudget--;
+      try {
+        items.push({ dataUrl: await toDataUrl(el) });
+      } catch {
+        // 跨網域圖片讀不到像素：交給背景下載解碼
+        const src = el.currentSrc || el.src;
+        if (src && /^https?:/i.test(src)) items.push({ url: src });
+      }
+    }
+    if (!items.length) return;
+    const res = await send({ type: 'decodeQr', items });
+    let changed = false;
+    for (const t of (res && res.texts) || []) if (t && !qrTexts.includes(t)) { qrTexts.push(t); changed = true; }
+    if (changed && !overlayShown) { checks = Math.min(checks, MAX_CHECKS - 1); check(); }
+  }
+
   function collectSignals() {
     const text = (el, max) => ((el && (el.innerText || el.textContent)) || '').slice(0, max);
     const identity = [];
@@ -234,6 +301,7 @@
       copy: collectCopy(),
       gateways: collectGateways(),
       exfilLive,
+      qr: qrTexts.slice(0, 10),
     };
   }
 
@@ -646,6 +714,7 @@
       const elapsed = Date.now() - startedAt;
       if (elapsed > 600000) { mo.disconnect(); return; }
       if (deepCheck && !overlayShown && elapsed < 120000 && keyOf(detectFields()) !== lastKey) check();
+      if (deepCheck && !overlayShown && elapsed < 120000) scanQr();
       if (settings.markLinks) scanLinks();
     }, 1200);
   });
@@ -863,7 +932,12 @@
       settings = pre.settings || settings;
       deepCheck = !['official', 'gov', 'trusted', 'skip'].includes(pre.level);
     }
-    if (deepCheck) check();
+    if (deepCheck) {
+      check();
+      scanQr();
+      // 圖片還沒下載完的，等網頁載入完成再找一次
+      if (document.readyState !== 'complete') window.addEventListener('load', () => setTimeout(scanQr, 300), { once: true });
+    }
     if (settings.markLinks) scanLinks();
     if (document.body) mo.observe(document.body, { childList: true, subtree: true });
   }

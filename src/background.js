@@ -6,6 +6,7 @@ import { OFFICIAL_SITES } from './data/official-sites.js';
 import { LIST_SOURCES } from './data/list-sources.js';
 import { issueUrl, PROJECT } from './data/project.js';
 import { validateRemoteOfficial } from './lib/remote-official.js';
+import { decodeQr } from './lib/qr.js';
 
 const DEFAULT_REPORT_URL = 'https://fraudbuster.digiat.org.tw/accessibility/index';
 const DEFAULT_SETTINGS = {
@@ -298,6 +299,59 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   recentRedirect.delete(tabId);
 });
 
+// ───────── 網頁上的 QR Code 解碼 ─────────
+/** 圖片 → QR Code 文字。有內建 BarcodeDetector（macOS、ChromeOS 等）先用它，否則用自己的解碼器 */
+async function decodeQrBlob(blob) {
+  const bitmap = await createImageBitmap(blob);
+  try {
+    if (typeof BarcodeDetector !== 'undefined') {
+      try {
+        const found = await new BarcodeDetector({ formats: ['qr_code'] }).detect(bitmap);
+        if (found && found[0] && found[0].rawValue) return found[0].rawValue;
+      } catch { /* 這台電腦不支援，改用自己的解碼器 */ }
+    }
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale)), h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = new OffscreenCanvas(w, h);
+    const g = canvas.getContext('2d', { willReadFrequently: true });
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, w, h);
+    g.drawImage(bitmap, 0, 0, w, h);
+    const r = decodeQr(g.getImageData(0, 0, w, h));
+    return r ? r.text : null;
+  } finally {
+    bitmap.close();
+  }
+}
+
+const qrCache = new Map(); // 圖片網址 → 解碼結果（服務休眠前有效）
+async function decodeQrItems(items) {
+  const texts = [];
+  for (const it of (items || []).slice(0, 8)) {
+    try {
+      let text;
+      if (it.dataUrl && /^data:image\/(png|jpeg|gif|webp|bmp)[;,]/i.test(it.dataUrl) && it.dataUrl.length < 8e6) {
+        text = await decodeQrBlob(await (await fetch(it.dataUrl)).blob());
+      } else if (it.url && /^https?:\/\//i.test(it.url)) {
+        if (qrCache.has(it.url)) text = qrCache.get(it.url);
+        else {
+          // 網頁已經載入過這張圖；不帶 Cookie，只下載圖片本身
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 8000);
+          const res = await fetch(it.url, { credentials: 'omit', cache: 'force-cache', signal: ctrl.signal });
+          clearTimeout(timer);
+          const blob = res.ok ? await res.blob() : null;
+          text = blob && blob.size < 5e6 && /^image\//.test(blob.type || 'image/') ? await decodeQrBlob(blob) : null;
+          qrCache.set(it.url, text);
+          if (qrCache.size > 300) qrCache.delete(qrCache.keys().next().value);
+        }
+      }
+      if (text) texts.push(String(text).slice(0, 4000));
+    } catch { /* 不是圖片或解不出來 */ }
+  }
+  return texts;
+}
+
 // ───────── 一鍵通報 ─────────
 function buildReportText(v, title, extra = {}) {
   const time = new Date().toLocaleString('zh-TW', { hour12: false });
@@ -575,6 +629,9 @@ async function handle(msg, sender) {
 
     case 'prepareReport':
       return prepareReport(msg.url, msg.title, { tabId, capture: Boolean(msg.capture) });
+
+    case 'decodeQr':
+      return { texts: await decodeQrItems(msg.items) };
 
     case 'domainAge':
       return domainAge(msg.url || (sender.tab && sender.tab.url), { force: true });
