@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { OFFICIAL_SITES } from '../src/data/official-sites.js';
 import { exportOfficial } from '../src/lib/remote-official.js';
+import { LOGO_HASHES } from '../src/data/logo-hashes.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, '_site');
@@ -19,6 +20,7 @@ mkdirSync(path.join(out, 'gmail'), { recursive: true });
 for (const f of ['Code.gs', 'Engine.gs']) copyFileSync(path.join(root, 'gmail/dist', f), path.join(out, 'gmail', f));
 const json = exportOfficial(OFFICIAL_SITES);
 writeFileSync(path.join(out, 'official-sites.json'), JSON.stringify(json));
+writeFileSync(path.join(out, 'logo-hashes.json'), JSON.stringify(LOGO_HASHES));
 writeFileSync(path.join(out, '.nojekyll'), '');
 const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 console.log(`_site/ 已產生：index.html、privacy.html、official-sites.json（${json.sites.length} 個機構）；插件版本 ${manifest.version}`);

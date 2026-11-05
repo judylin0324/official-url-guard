@@ -6,6 +6,10 @@ on:
   push:
     branches: [main]
     paths: ['src/**', 'web/**', 'gmail/**', 'tools/build-*.mjs', 'manifest.json', '.github/workflows/pages.yml']
+  # 「更新官網 Logo 指紋」由機器人提交，不會觸發 push 事件，所以跑完後另外觸發
+  workflow_run:
+    workflows: ['更新官網 Logo 指紋']
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -22,6 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main # workflow_run 時也要拿到機器人剛提交的指紋
       - uses: actions/setup-node@v4
         with:
           node-version: 22

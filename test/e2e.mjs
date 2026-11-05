@@ -77,6 +77,23 @@ PAGES['parking-qr-pay.com'] = `<!doctype html><html><head><meta charset="utf-8">
   <p>或掃描查詢罰單明細：</p><img src="${QR_URL}" width="150" height="150" alt="">
   <p>客服 LINE 加好友：</p>${svgQr('https://line.me/ti/p/~scam-line-tw')}</main></body></html>`;
 
+// Logo 比對：網站圖示是「中國信託」的 Logo（測試用的模擬圖），頁面文字完全沒提到銀行名稱
+const { dhash } = await import('../src/lib/image-hash.js');
+const logoRgba = (() => {
+  const w = 240, h = 120, data = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const nx = (x + 0.5) / w, ny = (y + 0.5) / h;
+    const c = Math.hypot(nx - 0.25, ny - 0.5) < 0.2 ? [200, 20, 40] : nx > 0.5 && ny > 0.3 && ny < 0.7 ? [30, 60, 140] : [255, 255, 255];
+    data.set([...c, 255], (y * w + x) * 4);
+  }
+  return { data, width: w, height: h };
+})();
+const LOGO_PNG = toPng(logoRgba);
+const logoDb = { format: 'oug-logo-hashes', generatedAt: '2099-01-01T00:00:00Z', hashes: [{ h: dhash(logoRgba), site: '中國信託商業銀行', domain: 'ctbcbank.com', kind: 'icon' }] };
+PAGES['card-verify-tw.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>信用卡安全驗證</title><link rel="icon" href="https://img-cdn-mock.net/fav.png">${style}</head><body>
+  <header><img src="https://img-cdn-mock.net/fav.png" width="120" height="60" alt=""></header><main><h1>安全驗證</h1><p>為保障您的權益，請輸入卡號完成驗證。</p>
+  <label for="c">卡號</label><input id="c"></main></body></html>`;
+
 // 模擬 RDAP：tw-parking-pay.com 5 天前才註冊
 const FIVE_DAYS_AGO = new Date(Date.now() - 5 * 86400000 - 3600000).toISOString();
 const rdapRequests = [];
@@ -117,6 +134,10 @@ await context.route('**/*', (route) => {
   requestedHosts.add(u.hostname);
   if (!/^https?:$/.test(u.protocol)) return route.continue();
   if (u.hostname === 'cdn-qrimg.net') return route.fulfill({ status: 200, contentType: 'image/png', body: QR_TWQR });
+  if (u.hostname === 'img-cdn-mock.net') return route.fulfill({ status: 200, contentType: 'image/png', body: LOGO_PNG });
+  if (u.hostname === 'judylin0324.github.io' && u.pathname.endsWith('/logo-hashes.json')) {
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(logoDb) });
+  }
   if (u.hostname === 'rdap.org') {
     rdapRequests.push(u.pathname);
     if (u.pathname === '/domain/tw-parking-pay.com') {
@@ -418,6 +439,14 @@ check('解出網頁上三種 QR Code（跨網域 PNG、內嵌圖片、SVG）', q
 check('冒名停管處、只放 QR Code 轉帳碼的繳費頁判為危險', v13g?.level === 'danger' && v13g.page.asks.includes('掃碼付款／轉帳'), v13g?.reasons?.[0]?.text);
 check('指出 QR Code 連到仿冒監理服務網的網址', v13g?.reasons?.some((r) => /QR Code 連到 www\.mvdis\.gov\.tw\.pay-fine\.top/.test(r.text)));
 await page.screenshot({ path: path.join(SHOTS, '13-qr-overlay.png') });
+
+// 13h. Logo 比對：網站圖示和中國信託官網的一樣，又要你輸入卡號
+const logoUpd = await sw.evaluate(() => globalThis.__oug.updateLogos());
+check('從專案網站下載官網 Logo 指紋並通過檢查', logoUpd && logoUpd.ok && logoUpd.count === 1, JSON.stringify(logoUpd));
+await page.goto('https://card-verify-tw.com/');
+await settle(3500);
+const v13h = await verdictOf(page);
+check('網站圖示是中國信託的 Logo、要你輸入卡號 → 危險（頁面文字沒提到銀行）', v13h?.level === 'danger' && /中國信託.*圖片比對/.test(v13h?.reasons?.[0]?.text || '') && v13h?.impersonating?.domain === 'ctbcbank.com', v13h?.reasons?.[0]?.text);
 
 // 13f. 彈出視窗：顯示正確繳費管道、查註冊日期
 const parkTab = await context.newPage();

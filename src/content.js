@@ -241,6 +241,39 @@
     return c.toDataURL('image/png');
   }
 
+  // ───────── 網站圖示、頁首 Logo：交給背景和官網 Logo 指紋比對 ─────────
+  let logoMatches = [];
+  let logoChecked = false;
+  async function checkLogos() {
+    if (logoChecked) return;
+    logoChecked = true;
+    const items = [];
+    for (const l of [...document.querySelectorAll('link[rel~="icon" i][href], link[rel="apple-touch-icon" i][href]')].slice(0, 3)) {
+      if (/^https?:/i.test(l.href)) items.push({ url: l.href, kind: 'icon' });
+    }
+    if (!items.length) items.push({ url: location.origin + '/favicon.ico', kind: 'icon' });
+    let logos = 0;
+    for (const img of [...document.images].slice(0, 200)) {
+      if (logos >= 3) break;
+      if (!img.complete || img.naturalWidth < 24 || img.naturalHeight < 12) continue;
+      // 只看網頁「自己的」Logo：在頁首或導覽列，或在最上方且名稱有 logo（內文裡的銀行、支付 Logo 不算）
+      const hint = `${img.className} ${img.id} ${img.alt} ${img.getAttribute('src') || ''}`;
+      const inHeader = img.closest('header, nav, .header, #header, .navbar, [role="banner"]');
+      const nearTop = img.getBoundingClientRect().top + window.scrollY < 180;
+      if (!(inHeader || (nearTop && /logo/i.test(hint)))) continue;
+      logos++;
+      try { items.push({ dataUrl: await toDataUrl(img), kind: 'logo' }); } catch {
+        const src = img.currentSrc || img.src;
+        if (/^https?:/i.test(src)) items.push({ url: src, kind: 'logo' });
+      }
+    }
+    const res = await send({ type: 'logoCheck', items });
+    if (res && res.matches && res.matches.length) {
+      logoMatches = res.matches;
+      if (!overlayShown) { checks = Math.min(checks, MAX_CHECKS - 1); check(); }
+    }
+  }
+
   async function scanQr() {
     if (!deepCheck || qrBudget <= 0 || !document.body) return;
     const text = (document.body.innerText || '').slice(0, 20000) + document.title;
@@ -302,6 +335,7 @@
       gateways: collectGateways(),
       exfilLive,
       qr: qrTexts.slice(0, 10),
+      logo: logoMatches,
     };
   }
 
@@ -690,6 +724,8 @@
       const { verdict: v, allowed, dismissed } = res;
       lastVerdict = v;
       if (res.submitOk) submitOk = true;
+      // 要你付款或輸入密碼的網頁，再比對網站圖示與 Logo 是不是抄官網的
+      if (!logoChecked && v.page && (v.page.asks.length || v.page.creds.length) && v.level !== 'danger') checkLogos();
       if (allowed) {
         if (v.level === 'danger') showBar(v, true);
       } else if (v.level === 'danger' && settings.pageGuard) {

@@ -817,6 +817,20 @@ function copiedFrom(copy, ctx, base) {
   return null;
 }
 
+/** 圖片比對：網站圖示或頁首 Logo 和某個官網的一模一樣（signals.logo 由背景比對官網 Logo 指紋得到） */
+function logoCopy(matches, ctx, base) {
+  for (const m of matches || []) {
+    if (!m) continue;
+    const how = m.kind === 'icon' ? '網站圖示（favicon）和官網的一模一樣' : '頁首的 Logo 和官網的一模一樣';
+    if (m.gov && !m.domain) return { site: null, domain: null, gov: true, how: `${how}（政府網站共用的圖示）`, viaLogo: true };
+    const site = m.domain ? ctx.officialDomains.get(m.domain) : null;
+    if (!site || parseHost(m.domain).registrable === base.registrable) continue;
+    if (m.kind !== 'icon' && site.category === '支付') continue; // 結帳頁常放支付品牌 Logo
+    return { site, domain: m.domain, how: `${how}（圖片比對）`, viaLogo: true };
+  }
+  return null;
+}
+
 /** 文字裡的金額（NT$120、120 元、120円），回傳最小的正數 */
 function smallestAmount(text) {
   let min = null;
@@ -840,6 +854,7 @@ function smallestAmount(text) {
  *   gateways 網頁裡嵌入的 iframe 網域（正規金流的刷卡欄位放在 iframe 裡）
  *   exfilLive 網頁程式把剛輸入的卡號／驗證碼傳出去 { host, kind: card|otp, beforeSubmit }（只有目的網域與是非值）
  *   qr      網頁上 QR Code 解碼出來的文字（背景解碼）
+ *   logo    網站圖示、頁首 Logo 和官網 Logo 指紋相同的結果 [{ site, domain, gov, kind: icon|logo, distance }]
  * @param {object} ctx
  * @param {object} base assessUrl() 的結果
  */
@@ -884,7 +899,7 @@ export function assessPage(signals, ctx, base) {
     if (c.alias && where.includes(c.alias)) { claim = c; break; }
   }
   // 抄襲官網的痕跡：就算機構名稱做成圖片、文字讀不到，也等於自稱是那個官網
-  const copied = copiedFrom(signals.copy, ctx, base);
+  const copied = copiedFrom(signals.copy, ctx, base) || logoCopy(signals.logo, ctx, base);
   if (!claim && copied && copied.site) claim = { display: copied.site.name, site: copied.site, viaCopy: true };
   // 補助名目（運動幣、普發現金…）本身就代表「自稱政府」
   const govProgram = findAny(allNorm, GOV_PROGRAMS)[0] || null;
@@ -902,13 +917,17 @@ export function assessPage(signals, ctx, base) {
   const govImp = (name) => ({ name, domain: null, url: null, hint: '真正的政府網站網址以 .gov.tw 結尾（臺北市為 .gov.taipei）' });
 
   if (copied) {
-    const who = copied.site ? `「${copied.site.name}」官網` : `政府網站 ${copied.domain}`;
-    if (money || creds.length) {
+    const who = copied.site ? `「${copied.site.name}」官網` : copied.domain ? `政府網站 ${copied.domain}` : '政府網站';
+    const strong = money || creds.length;
+    if (strong) {
       add(85, `這個網頁是從${who}複製來的（${copied.how}），卻在 ${base.displayHost} 要你提供${[...new Set([...asks, ...creds])].join('、')}`);
+    } else if (copied.viaLogo) {
+      // 只有 Logo 相同、沒要錢或密碼（例如新聞、介紹文章）：只記錄，不加分
+      reasons.push({ text: `這個網頁的${copied.how.replace(/（.*）$/, '')}`, weight: 0 });
     } else {
       add(40, `這個網頁看起來是從${who}複製來的（${copied.how}），但網址是 ${base.displayHost}`);
     }
-    impersonating = copied.site ? { name: copied.site.name, domain: copied.site.domains[0], url: officialUrl(copied.site) } : govImp(`政府網站 ${copied.domain}`);
+    if (strong || !copied.viaLogo) impersonating = copied.site ? { name: copied.site.name, domain: copied.site.domains[0], url: officialUrl(copied.site) } : govImp(copied.domain ? `政府網站 ${copied.domain}` : '政府機關');
   }
 
   if (money && claim && !claim.viaCopy) {

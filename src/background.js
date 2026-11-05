@@ -7,6 +7,8 @@ import { LIST_SOURCES } from './data/list-sources.js';
 import { issueUrl, PROJECT } from './data/project.js';
 import { validateRemoteOfficial } from './lib/remote-official.js';
 import { decodeQr } from './lib/qr.js';
+import { dhash, matchLogo, validateLogoDb } from './lib/image-hash.js';
+import { LOGO_HASHES } from './data/logo-hashes.js';
 
 const DEFAULT_REPORT_URL = 'https://fraudbuster.digiat.org.tw/accessibility/index';
 const DEFAULT_SETTINGS = {
@@ -352,6 +354,71 @@ async function decodeQrItems(items) {
   return texts;
 }
 
+// ───────── 官網 Logo 比對 ─────────
+let logoDb = null;
+async function getLogoDb() {
+  if (logoDb) return logoDb;
+  const bundled = validateLogoDb(LOGO_HASHES, OFFICIAL_SITES);
+  const { logoRemote } = await chrome.storage.local.get('logoRemote');
+  // 線上版比內建版新就用線上版（線上版下載時已經檢查過）
+  const useRemote = logoRemote && logoRemote.hashes && (!LOGO_HASHES.generatedAt || logoRemote.generatedAt > LOGO_HASHES.generatedAt);
+  logoDb = useRemote ? logoRemote.hashes : bundled.ok ? bundled.hashes : [];
+  return logoDb;
+}
+chrome.storage.onChanged.addListener((changes) => { if (changes.logoRemote) logoDb = null; });
+
+async function updateLogos() {
+  try {
+    const remote = JSON.parse(await fetchText(PROJECT.pages + 'logo-hashes.json', 20000));
+    const v = validateLogoDb(remote, OFFICIAL_SITES);
+    if (!v.ok) return { ok: false, error: v.error };
+    await chrome.storage.local.set({ logoRemote: { hashes: v.hashes, generatedAt: remote.generatedAt || '', fetchedAt: Date.now() } });
+    return { ok: true, count: v.hashes.length };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/** 圖片 → 指紋：縮到最長邊 256 像素（和建立官網指紋時一樣） */
+async function hashImageBlob(blob) {
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const s = Math.min(1, 256 / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * s)), h = Math.max(1, Math.round(bitmap.height * s));
+    if (w < 12 || h < 12) return null;
+    const canvas = new OffscreenCanvas(w, h);
+    const g = canvas.getContext('2d', { willReadFrequently: true });
+    g.drawImage(bitmap, 0, 0, w, h);
+    return dhash(g.getImageData(0, 0, w, h));
+  } finally {
+    bitmap.close();
+  }
+}
+
+async function logoCheck(items) {
+  const db = await getLogoDb();
+  if (!db.length) return { matches: [], dbSize: 0 };
+  const matches = [];
+  for (const it of (items || []).slice(0, 6)) {
+    try {
+      let blob = null;
+      if (it.dataUrl && /^data:image\/(png|jpeg|gif|webp|bmp)[;,]/i.test(it.dataUrl) && it.dataUrl.length < 8e6) blob = await (await fetch(it.dataUrl)).blob();
+      else if (it.url && /^https?:\/\//i.test(it.url)) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 8000);
+        const res = await fetch(it.url, { credentials: 'omit', cache: 'force-cache', signal: ctrl.signal });
+        clearTimeout(timer);
+        blob = res.ok ? await res.blob() : null;
+      }
+      if (!blob || blob.size > 3e6) continue;
+      const h = await hashImageBlob(blob);
+      const m = h && matchLogo(h, db);
+      if (m) matches.push({ site: m.site, domain: m.domain, gov: Boolean(m.gov), kind: it.kind === 'icon' ? 'icon' : 'logo', distance: m.distance });
+    } catch { /* 不是圖片或讀不到 */ }
+  }
+  return { matches, dbSize: db.length };
+}
+
 // ───────── 一鍵通報 ─────────
 function buildReportText(v, title, extra = {}) {
   const time = new Date().toLocaleString('zh-TW', { hour12: false });
@@ -450,7 +517,8 @@ async function update165() {
     // 檢查用的涉詐網域：剛下載的、手動匯入的、使用者封鎖的全部都算
     const forbidden = new Set([...kept, ...st.ctx.blocklist, ...st.ctx.userBlocked]);
     const official = st.settings.remoteOfficial ? await updateOfficial(forbidden) : null;
-    return { ok: true, count: kept.length, removed: removed.length, removedSample: removed.slice(0, 10), rules, sources: results, official };
+    const logos = st.settings.remoteOfficial ? await updateLogos() : null;
+    return { ok: true, count: kept.length, removed: removed.length, removedSample: removed.slice(0, 10), rules, sources: results, official, logos };
   })();
   try { return await updating; } finally { updating = null; }
 }
@@ -630,6 +698,9 @@ async function handle(msg, sender) {
     case 'prepareReport':
       return prepareReport(msg.url, msg.title, { tabId, capture: Boolean(msg.capture) });
 
+    case 'logoCheck':
+      return logoCheck(msg.items);
+
     case 'decodeQr':
       return { texts: await decodeQrItems(msg.items) };
 
@@ -686,4 +757,4 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // 給自動化測試用
-globalThis.__oug = { assess, getState, buildReportText, syncBlockRules, update165, domainAge };
+globalThis.__oug = { assess, getState, buildReportText, syncBlockRules, update165, domainAge, updateLogos };
