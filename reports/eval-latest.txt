@@ -1,0 +1,101 @@
+官網守門員每週評估（2026-11-09）
+
+TWNIC 停止解析詐騙網址：共 1734｜危險 289（16.7%）｜可疑 518（29.9%）｜至少提醒 46.5%｜其他 927
+    393  Fake e-commerce one-page scam            危險 12.0%  至少提醒 37.4%
+    257  Suspected impersonation of Le Xin Creati 危險 0.0%  至少提醒 52.1%
+    175  Suspected impersonation of NewebPay Tech 危險 67.4%  至少提醒 90.3%
+    131  Impersonation of Le Xin (樂信) shopping we 危險 0.0%  至少提醒 45.8%
+    120  Suspected impersonation of Mei Wu Hen Bi 危險 0.8%  至少提醒 25.0%
+     88  Suspected impersonation of Shopee shoppi 危險 52.3%  至少提醒 85.2%
+     87  Suspected impersonation of Rakuten Taiwa 危險 19.5%  至少提醒 47.1%
+     72  Suspected impersonation of iPASS Corpora 危險 1.4%  至少提醒 18.1%
+     56  Suspected impersonation of Shopee Entert 危險 32.1%  至少提醒 53.6%
+     50  Suspected LINE account impersonation sca 危險 44.0%  至少提醒 64.0%
+     43  Suspected impersonation of Ke Lin Intern 危險 0.0%  至少提醒 0.0%
+     34  Suspected impersonation of Fubon shoppin 危險 8.8%  至少提醒 61.8%
+     23  Suspected impersonation of LINE shopping 危險 26.1%  至少提醒 30.4%
+     19  Suspected impersonation of online advert 危險 10.5%  至少提醒 10.5%
+     18  Suspected impersonation of ETMall (東森購物) 危險 5.6%  至少提醒 16.7%
+   ── 漏掉的例子 ──
+   unknown  https://tobuyersepc24.com/57vgaqk#/login  ← Links to PChome 24H shopping website homepage
+   unknown  https://onlytoppc24.com/ucy9mf2#/login  ← Links to PChome 24H shopping website homepage
+   unknown  https://topbuypc24.com/uxinwni  ← Suspected impersonation of PChome 24h shopping web
+   unknown  https://comeinpc24.com/pwoi17  ← Suspected impersonation of PChome 25h [sic] shoppi
+   unknown  https://justfunpc24.com/sqanw94#/login  ← Suspected impersonation of PChome 24h shopping web
+   unknown  https://qsoern.com/item/HHY/221053.html?fbclid=IwAR33PnvLk-f1F26YRkQtG  ← Suspected impersonation of Le Xin (樂信) shopping we
+   unknown  https://cqddzz.com  ← Suspected impersonation of Le Xin (樂信) shopping we
+   unknown  https://letang888.com  ← Suspected impersonation of Rakuten Taiwan website
+   unknown  https://hiseud.com/item/RHY/22105.html?campaign_id=23858575402370628&a  ← Suspected impersonation of Le Xin Creative (樂信創意) 
+   unknown  https://momotwafvb.store/p?id=vo5IMOm&fbclid=IwAR0QNTbgnG1bkv8sshFHe7a  ← Suspected impersonation of Le Xin Creative (樂信創意) 
+   unknown  https://agftyf.shop/Twcolare2?fbclid=IwAR0bjKivQzOOlLoRXNDe1XGVBnbLuJ2  ← Suspected impersonation of Le Xin Creative (樂信創意) 
+   unknown  https://www.momoshopasian.com  ← Impersonation of "mom" [sic, likely momo] shopping
+   unknown  https://www.rakutens-buyer.com  ← Impersonation of Rakuten Taiwan shopping website
+   unknown  https://ldscshop.online/index.php?m=Item&a=order&id=9F1DY6&fbclid=IwAR  ← Impersonation of Yi Rui Smart (宜睿智慧) issuing KFC i
+   unknown  https://twcatea.club/Kuw63C?fbclid=lwAR2hnYpv6nragyCrj1Bpjm-JbxNRpGyRr  ← Impersonation of Books.com.tw (博客來) shopping webpa
+   unknown  https://cokst.com/item/PJ1/txy2.html?fbclid=IwAR23aiVIQVbMABccLXoCo6M6  ← Impersonation of Le Xin (樂信) one-page scam shoppin
+   unknown  https://tsuioe.com/item/colaresearchclub/22105.html?campaign_id=238567  ← Impersonation of Le Xin (樂信) one-page scam shoppin
+   unknown  https://jeksvt.com/item/JZHG/22105.html?campaign_id=23854615497940072&  ← Impersonation of Le Xin (樂信) one-page scam shoppin
+   unknown  https://sveint.com/item/JZHG/22105.html?campaign_id=23860659324600667&  ← Impersonation of Le Xin Creative (樂信創意) shopping w
+   unknown  https://trcems.com/item/hgmk/22105.html  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://tw.ashersanc.online/k8a51114m800?fbclid=IwAR3sZ5HXY57BvHNbxCkP  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://lekebaihuo.shop/collections/所有商品  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://qeermn.com/item/PJ1/txy2.html  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://qeyuwa.shop/d.php?product_id=c0ic  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://laobeibi.shop/products/【現貨供應】dr.gracie極致黑g瑪卡-30包-盒-｜許藍方博士親自研發x  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://kureshangcheng.shop/products/【現貨供應】dr.gracie極致黑g瑪卡-30包-盒-｜許藍方博  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://yusq.shop/product/mndytw  ← Impersonation of OB Select (OB嚴選) one-page shoppin
+   unknown  https://tw.kathleens.asia/kbngvtshfk00?fbclid=IwAR3Z3hMZ8L1b2gvi8nkhq8  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://colaresearchclub.vip/item/PJ1/txy2.html?fbclid=IwAR3Xmzl84m1pZ  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://mmntsu.shop/page/about  ← Impersonation of momo shopping website
+   unknown  https://aecisu.com/item/RHY/22105.html?campaign_id=120200516004290677&  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://sauiet.com/item/hgmk/22105.html  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://jpedcf.shop/c/DGrCVtacOHWS7MFx7Ft?p=BJ6q89  ← Impersonation of Le Xin (樂信) shopping webpage
+   unknown  https://www.shopkayz.shop/ken1c3l8ns00?fbclid=IwAR1jbD6qWmJ-ZjAIKtCZSF  ← Impersonation of Le Xin (樂信) one-page shopping web
+   unknown  https://ni.okjhsa.xyz  ← Impersonation of Kingstone (金石堂) one-page shopping
+   unknown  https://dcolaresearch.com  ← Impersonation of Le Xin (樂信) one-page shopping web
+   unknown  https://laobeibi.shop/products/【現貨供應】dr.gracie極致黑g瑪卡-30包-盒-｜許藍方博士親自研發x  ← Impersonation of Le Xin (樂信) one-page shopping web
+   unknown  https://elizfsds.club/c/kjjY3reWtzT9EAxf3Ef?p=ffMtc4&fbclid=IwAR3YdOSq  ← Impersonation of Le Xin (樂信) one-page shopping web
+   unknown  https://shopline-sg.net/  ← Impersonation of Shang Xian Technology (商線科技) shop
+   unknown  https://jnhr.club/kem0p35okc00  ← Impersonation of Le Xin (樂信) shopping webpage
+165 假投資（博弈）網站：共 31030｜危險 316（1.0%）｜可疑 3655（11.8%）｜至少提醒 12.8%｜其他 27059
+   ── 判為官方或政府的（應檢查）──
+   platform https://shilic.s3.ap-east-1.amazonaws.com/Assistant/index.ht  AL Assistant
+   official https://play.google.com/store/apps/details?id=com.lfojw.wvbt  APP
+   platform https://bitclog-jp.s3.amazonaws.com/index.html  BitClog
+   platform https://hepojx.s3-accelerate.amazonaws.com/index.html  HEPOJX
+   platform https://hepojx.s3.ap-southeast-1.amazonaws.com  HEPOJX
+   platform https://hepojx.s3.ap-southeast-1.amazonaws.com/dowln-hepojx/  HEPOJX
+   platform https://downas-hkex.s3.ap-east-1.amazonaws.com/index.html  HKEX
+   platform https://img-se.s3.us-west-1.amazonaws.com/index.html  LSE（London Stock Exchange）
+   platform https://appdown-2.s3.ap-southeast-1.amazonaws.com/appdown-28  OKdatt
+Chrome 台灣熱門網站（誤判檢查；排名越後面越可能本身就是詐騙站）：
+   前   1000 名（累計 1000）：危險 0（0.0%）｜可疑 4（0.4%）
+   前   5000 名（累計 5000）：危險 0（0.0%）｜可疑 32（0.6%）
+   前  10000 名（累計 10000）：危險 1（0.0%）｜可疑 75（0.8%）
+   前  50000 名（累計 50000）：危險 9（0.0%）｜可疑 380（0.8%）
+   前 100000 名（累計 100000）：危險 48（0.0%）｜可疑 753（0.8%）
+   前 500000 名（累計 246948）：危險 171（0.1%）｜可疑 2771（1.1%）
+   ── 前 5 萬名中被判危險的 ──
+    10000 https://ibongift.com                          網址含「統一超商 7-ELEVEN」相關字樣「ibon」，但不是官方網域
+    50000 https://hlpb.twgov.mobi                       網址裡有「gov」「tw」字樣，但不是政府網域（政府網址一定以 .gov.tw 結尾）
+    50000 https://gamania-accounts.firebaseapp.com      網址包含「遊戲橘子」的名稱「gamania」，但不是官方網域（官方是 gamania.com）
+    50000 https://ipass.cyberbiz.co                     和「一卡通票證公司」官方網址 i-pass.com.tw 幾乎一樣，只是換了長得像的字元或加了符號
+    50000 https://www.netflixgc.com                     網域開頭就是「Netflix」的「netflix」，但不是官方網域
+    50000 https://apple1314.vip                         網址包含「Apple」的名稱「apple」，但不是官方網域（官方是 apple.com）
+    50000 https://twitterxz.com                         網域開頭就是「X（Twitter）」的「twitter」，但不是官方網域
+    50000 https://sagawa.store                          網址就是「佐川急便」的品牌字「sagawa」，但不是官方網域
+    50000 https://hotel.twagoda.com                     網址包含「Agoda」的名稱「agoda」，但不是官方網域（官方是 agoda.com）
+訊息案例【fraud】57 則：caution 18｜danger 16｜no-url 21｜unknown 2
+訊息案例【trustworthy】19 則：no-url 19
+訊息案例【insufficient-evidence】21 則：caution 3｜unknown 3｜no-url 14｜danger 1
+   ── 標為「可信」卻被判危險或可疑 ──
+   ── 標為「詐騙」、有連結卻沒提醒 ──
+   unknown influencer-forex.zh-TW.yaml: 老師的外匯機器人每天自動獲利 3%，下載 https://forex-bot.example.com 並匯入 10,000 元就能開始。
+   unknown us-item-trade-code.en.yaml: Deal! I'll give you the limited hat for your two commons. The in-game trade window is bugg
+
+── 網域名稱小模型（只量測，不覆寫模型）──
+訓練：詐騙 23590、正常 50596｜測試：詐騙 4330、正常 12450
+正常網站誤判 2.0% 的門檻 0.811 → 新詐騙網域抓到 24.7%
+正常網站誤判 1.0% 的門檻 0.857 → 新詐騙網域抓到 18.0%
+正常網站誤判 0.5% 的門檻 0.897 → 新詐騙網域抓到 11.7%
+正常網站誤判 0.2% 的門檻 0.931 → 新詐騙網域抓到 6.8%
