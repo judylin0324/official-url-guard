@@ -8,3 +8,15 @@ a[data-oug-level="caution"] {
   outline: 2px dashed #d97706 !important;
   outline-offset: 2px !important;
 }
+
+/* 簡訊與通訊軟體網頁版：可疑訊息加外框 */
+[data-oug-msg="danger"] {
+  outline: 2px solid #cf222e !important;
+  outline-offset: 3px !important;
+  border-radius: 6px;
+}
+[data-oug-msg="caution"] {
+  outline: 2px dashed #d97706 !important;
+  outline-offset: 3px !important;
+  border-radius: 6px;
+}

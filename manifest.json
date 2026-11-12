@@ -53,6 +53,7 @@
         "https://*/*"
       ],
       "js": [
+        "src/adapters/message-sites.js",
         "src/content.js"
       ],
       "css": [

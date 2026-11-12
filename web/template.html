@@ -47,6 +47,7 @@ body {
 header { display: flex; flex-direction: column; gap: 4px; }
 h1 { font-family: var(--font-display); font-weight: 900; font-size: clamp(26px, 7vw, 34px); line-height: 1.2; margin: 0; letter-spacing: .02em; text-wrap: balance; }
 .lead { margin: 0; color: var(--ink-soft); }
+[hidden] { display: none !important; }
 .panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 label.cap { font-size: 13px; font-weight: 700; color: var(--ink-soft); letter-spacing: .04em; }
 textarea {
@@ -135,6 +136,15 @@ footer { font-size: 13px; color: var(--ink-soft); display: flex; flex-direction:
   </form>
 
   <section id="results" aria-live="polite"></section>
+
+  <section class="panel tips" id="installTips">
+    <h2>不用複製貼上：從簡訊直接「分享」過來</h2>
+    <dl>
+      <dt>Android</dt><dd>用 Chrome 開啟本頁，點右上角選單的「加到主畫面」或「安裝應用程式」。之後在簡訊或 LINE 長按訊息，選「分享」→「官網守門員」，就會直接顯示檢查結果。</dd>
+      <dt>iPhone</dt><dd>用 Safari 開啟本頁，點「分享」→「加入主畫面」，之後從主畫面開啟再貼上訊息。（iPhone 不支援直接分享到網頁 App。）</dd>
+    </dl>
+    <p class="hint">安裝後沒有網路也能檢查。分享過來的訊息一樣只在你的手機上判斷，不會傳到任何地方。</p>
+  </section>
 
   <section class="panel tips">
     <h2>自己也能一眼看穿</h2>
@@ -268,7 +278,24 @@ footer { font-size: 13px; color: var(--ink-soft); display: flex; flex-direction:
   $('msg').addEventListener('input', () => { $('exampleTag').hidden = true; });
   $('clear').addEventListener('click', () => { $('msg').value = ''; $('exampleTag').hidden = true; $('results').replaceChildren(); $('msg').focus(); });
   $('next').addEventListener('click', () => { exampleIndex++; loadExample(exampleIndex); });
+  // 從其他 App「分享」進來（Android 安裝成 App 之後），或用 ?text= 帶入訊息：直接檢查
+  // 分享內容可能分散在 title／text／url 三個欄位，合併後一起判斷
+  function sharedText() {
+    const q = new URLSearchParams(location.search);
+    const parts = ['title', 'text', 'url'].map((k) => (q.get(k) || '').trim()).filter(Boolean);
+    return [...new Set(parts)].join('\n').slice(0, 8000);
+  }
+  const shared = sharedText();
+  // 訊息內容不留在網址列與瀏覽紀錄裡
+  if (location.search) { try { history.replaceState(null, '', location.pathname); } catch { /* 忽略 */ } }
+  // 已經安裝成 App（獨立視窗）就不用再顯示安裝說明
+  if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) $('installTips').hidden = true;
+  // 離線支援：只有放在 https 網站、而且有 manifest 的完整網頁才註冊（Artifact 預覽、直接開啟檔案時略過）
+  if ('serviceWorker' in navigator && location.protocol === 'https:' && document.querySelector('link[rel="manifest"]')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
   $('stat').textContent = `官方網站清單：${OFFICIAL_SITES.length} 個機構、${OFFICIAL_SITES.reduce((n, s) => n + s.domains.length, 0)} 個網域。`;
-  loadExample(0);
+  if (shared) { $('msg').value = shared; $('exampleTag').hidden = true; run(); $('results').scrollIntoView({ block: 'start' }); }
+  else loadExample(0);
 })();
 </script>

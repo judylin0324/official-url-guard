@@ -830,48 +830,28 @@
     }
   }
 
-  // ───────── 網頁信箱：開信時檢查寄件人、內文與連結 ─────────
-  const pick = (root, sel) => (root && root.querySelector(sel)) || null;
-  const emailFrom = (el, attrs) => {
-    if (!el) return null;
-    for (const a of attrs) {
-      const v = el.getAttribute(a);
-      const m = v && v.match(/[\w.+-]+@(?:[\w-]+\.)+[a-z]{2,}/i);
-      if (m) return { name: (el.getAttribute('name') || el.textContent || '').trim().slice(0, 80), address: m[0] };
-    }
-    const m = (el.textContent || '').match(/[\w.+-]+@(?:[\w-]+\.)+[a-z]{2,}/i);
-    return m ? { name: '', address: m[0] } : null;
+  // ───────── 網頁信箱、簡訊與通訊軟體網頁版：檢查寄件人、內文與連結 ─────────
+  // 各網站的版面對應寫在 src/adapters/message-sites.js（一個網站一筆設定）
+  const findMessageSite = globalThis.OUG_findMessageSite || (() => null);
+  const outermost = globalThis.OUG_outermost || ((els) => els);
+  const messageSite = findMessageSite(location.hostname, location.pathname);
+  // 網域符合任一轉接設定就持續觀察畫面變化（facebook.com 要等使用者點進 /messages/ 才算）
+  const messageHost = (globalThis.OUG_MESSAGE_SITES || []).some((s) => s.host.test(location.hostname));
+  const mailClient = messageSite && messageSite.kind === 'mail' ? messageSite : null;
+  const chatClient = () => {
+    // 單頁應用程式換頁時路徑會變（facebook.com → /messages/），每次重新判斷
+    const s = findMessageSite(location.hostname, location.pathname);
+    return s && s.kind === 'chat' ? s : null;
   };
-  const WEBMAIL = [
-    {
-      host: /^mail\.google\.com$/,
-      body: 'div.a3s',
-      container: (b) => b.closest('.adn, .gs, .h7') || b.parentElement,
-      sender: (c) => emailFrom(pick(c, 'span.gD[email], span[email]'), ['email']),
-      subject: () => (pick(document, 'h2.hP') || {}).textContent || '',
-    },
-    {
-      host: /^outlook\.(live|office|office365)\.com$/,
-      body: 'div[aria-label="Message body"], div[aria-label="郵件內文"], div[aria-label="郵件本文"], div[aria-label="訊息本文"], div[aria-label="メッセージ本文"]',
-      container: (b) => b.closest('[data-app-section="ReadingPane"], [role="main"], [role="region"]') || b.parentElement,
-      sender: (c) => emailFrom(pick(c, '[title*="@"], [aria-label*="@"]'), ['title', 'aria-label']),
-      subject: () => (pick(document, '[role="main"] [role="heading"]') || {}).textContent || '',
-    },
-    {
-      host: /^(mail\.yahoo\.com|tw\.mail\.yahoo\.com|mail\.yahoo\.co\.jp)$/,
-      body: '[data-test-id="message-view-body-content"], .msg-body',
-      container: (b) => b.closest('[data-test-id="message-view"]') || b.parentElement,
-      sender: (c) => emailFrom(pick(c, '[data-test-id="message-from"] [title*="@"], [data-test-id="email-pill"]'), ['title']),
-      subject: () => (pick(document, '[data-test-id="message-group-subject-text"]') || {}).textContent || '',
-    },
-  ];
-  const mailClient = WEBMAIL.find((m) => m.host.test(location.hostname));
   const mailSeen = new WeakMap();
 
-  function mailBanner(body, r) {
-    const host = document.createElement('official-url-guard-mail');
+  function mailBanner(body, r, { chat = false } = {}) {
+    const what = chat ? '這則訊息' : '這封信';
+    const host = document.createElement(chat ? 'official-url-guard-chat' : 'official-url-guard-mail');
     host.setAttribute('data-level', r.overall);
-    host.style.cssText = 'display:block;margin:0 0 12px;';
+    host.style.cssText = chat
+      ? 'display:block;position:fixed;top:12px;right:12px;z-index:2147483646;width:min(380px,calc(100vw - 24px));box-shadow:0 6px 24px rgba(0,0,0,.25);border-radius:10px;'
+      : 'display:block;margin:0 0 12px;';
     const root = host.attachShadow({ mode: 'open' });
     const danger = r.overall === 'danger';
     const reasons = [];
@@ -885,7 +865,7 @@
       .row{display:flex;gap:8px;flex-wrap:wrap} button,a.btn{font:inherit;font-size:13px;font-weight:700;border-radius:8px;padding:6px 10px;cursor:pointer;text-decoration:none}
       .rep{background:#fff;color:#cf222e;border:2px solid #cf222e} .ok{background:#1a7f37;color:#fff;border:0} .fp{background:transparent;border:0;color:#57606a;text-decoration:underline;font-weight:400}
     </style><div class="box" role="alert"><b class="t"></b><ul></ul><div class="row"></div></div>`;
-    root.querySelector('.t').textContent = danger ? '⚠ 官網守門員：這封信很可能是詐騙，請不要點信裡的連結' : '⚠ 官網守門員：這封信有可疑的地方，請先確認';
+    root.querySelector('.t').textContent = danger ? `⚠ 官網守門員：${what}很可能是詐騙，請不要點裡面的連結` : `⚠ 官網守門員：${what}有可疑的地方，請先確認`;
     const ul = root.querySelector('ul');
     for (const t of [...new Set(reasons)].slice(0, 4)) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }
     const row = root.querySelector('.row');
@@ -897,7 +877,7 @@
     if (r.worst) {
       const b = document.createElement('button'); b.className = 'rep'; b.textContent = '一鍵通報詐騙網址';
       b.addEventListener('click', async () => {
-        // 截圖存證：把整封信（含寄件人）截下來，警告框先藏起來
+        // 截圖存證：把整封信或整段對話（含寄件人）截下來，警告框先藏起來
         host.style.visibility = 'hidden';
         await frame();
         let res;
@@ -906,17 +886,26 @@
         if (res && res.screenshot) toast(`已截圖存證：下載資料夾裡的「${res.screenshot}」。`);
       });
       row.appendChild(b);
-      const fp = document.createElement('button'); fp.className = 'fp'; fp.textContent = '這封信是正常的？回報誤判';
+      const fp = document.createElement('button'); fp.className = 'fp'; fp.textContent = `${what}是正常的？回報誤判`;
       fp.addEventListener('click', () => send({ type: 'openIssue', kind: 'false-positive', url: r.worst.url }));
       row.appendChild(fp);
     }
-    body.parentElement.insertBefore(host, body);
+    if (chat) {
+      // 浮動警告：不插進對話內容裡（通訊軟體的畫面由它自己的程式管理，插入元素可能被移除或弄亂版面）
+      const close = document.createElement('button'); close.className = 'fp'; close.textContent = '關閉';
+      close.addEventListener('click', () => host.remove());
+      row.appendChild(close);
+      for (const old of document.querySelectorAll('official-url-guard-chat')) old.remove();
+      document.documentElement.appendChild(host);
+    } else {
+      body.parentElement.insertBefore(host, body);
+    }
     // 信裡通往可疑目的地的連結加上紅框（點了也會被攔截）
     const bad = new Set(r.items.filter((v) => v.level === 'danger').map((v) => v.url));
     for (const a of body.querySelectorAll('a[href]')) {
       if (bad.has(a.href) || r.items.some((v) => v.level === 'danger' && v.wrapper === a.href)) {
         a.setAttribute('data-oug-level', 'danger');
-        a.title = '⚠ 官網守門員：這封信很可能是詐騙，這個連結會被攔截';
+        a.title = `⚠ 官網守門員：${what}很可能是詐騙，這個連結會被攔截`;
       }
     }
   }
@@ -938,11 +927,53 @@
       mailBanner(body, r);
     }
   }
+  // 簡訊（Google 訊息網頁版）與通訊軟體網頁版：畫面上每一則對方傳來的訊息都檢查一次
+  const chatSeen = new WeakMap(); // 訊息元素 → 已檢查過的文字
+  const chatCache = new Map(); // 訊息文字 → 判斷結果（同一段文字不重複送檢）
+  const LOOKS_LIKE_URL = /(?:https?:\/\/|www\.)\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/\S*)?/i;
+  let chatStatus = null;
+  async function checkChat() {
+    const site = chatClient();
+    if (!site) return;
+    const all = outermost([...document.querySelectorAll(site.message)]);
+    const status = `${site.id}:${all.length}`;
+    if (status !== chatStatus) {
+      // 讓工具列視窗能顯示「這個網站的訊息有沒有在自動檢查」；找不到任何訊息時，可能是網站改版了
+      chatStatus = status;
+      send({ type: 'adapterStatus', id: site.id, name: site.name, found: all.length });
+    }
+    for (const el of all.slice(-40)) {
+      if (!isVisible(el) || (site.incoming && !site.incoming(el))) continue;
+      const text = (el.innerText || '').trim().slice(0, 4000);
+      if (text.length < 8 || chatSeen.get(el) === text) continue;
+      chatSeen.set(el, text);
+      const links = [...el.querySelectorAll('a[href]')].slice(0, 20).map((a) => a.href).filter((h) => /^https?:/i.test(h));
+      // 沒有連結的短訊息（「好」「晚點到」）不送檢
+      if (!links.length && !LOOKS_LIKE_URL.test(text) && text.length < 20) continue;
+      let r = chatCache.get(text);
+      if (r === undefined) {
+        r = (await send({ type: 'assessEmail', text, links, source: 'chat' })) || null;
+        if (chatCache.size > 300) chatCache.clear();
+        chatCache.set(text, r);
+      }
+      if (!r || (r.overall !== 'danger' && r.overall !== 'caution')) continue;
+      el.setAttribute('data-oug-msg', r.overall);
+      const reasons = [...(r.worst ? r.worst.reasons.filter((x) => x.weight > 0).map((x) => x.text) : []), ...r.messageNotes];
+      el.title = `⚠ 官網守門員：${reasons.slice(0, 2).join('；') || '這則訊息有可疑的地方'}`;
+      // 朋友之間常互傳各種連結，只有「很可能是詐騙」才跳出浮動警告；「可疑」只在訊息上加橘色外框
+      if (r.overall === 'danger' && el.getAttribute('data-oug-warned') !== text.length + '') {
+        el.setAttribute('data-oug-warned', text.length + '');
+        mailBanner(el, r, { chat: true });
+      }
+    }
+  }
+
   let mailTimer = null;
-  const scheduleMail = () => { clearTimeout(mailTimer); mailTimer = setTimeout(checkMail, 800); };
-  if (mailClient) {
+  const scheduleMail = () => { clearTimeout(mailTimer); mailTimer = setTimeout(() => { checkMail(); checkChat(); }, 800); };
+  if (messageHost) {
     new MutationObserver(scheduleMail).observe(document.documentElement, { childList: true, subtree: true });
     window.addEventListener('hashchange', scheduleMail);
+    window.addEventListener('popstate', scheduleMail);
   }
 
   // ───────── 網詐通報查詢網：自動帶入可疑網址 ─────────
@@ -977,7 +1008,7 @@
 
   async function start() {
     if (location.hostname === 'fraudbuster.digiat.org.tw') autofillReport();
-    if (mailClient) scheduleMail();
+    if (messageHost) scheduleMail();
     const pre = await send({ type: 'urlCheck', url: location.href });
     if (pre) {
       settings = pre.settings || settings;

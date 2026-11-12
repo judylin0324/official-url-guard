@@ -35,4 +35,14 @@ for x, y in [(150, 270), (370, 185)]:
 
 for size in (16, 32, 48, 128):
     img.resize((size, size), Image.LANCZOS).save(OUT / f"icon-{size}.png")
+
+# 手機版檢查網頁「安裝成 App」用的圖示（放在 web/，不打包進擴充功能）。
+# 手機主畫面會把圖示裁成圓形或圓角，所以縮小放在白底中間。
+WEB = OUT.parent / "web"
+for size in (192, 512):
+    canvas = Image.new("RGBA", (size, size), (255, 255, 255, 255))
+    inner = img.resize((int(size * 0.72), int(size * 0.72)), Image.LANCZOS)
+    off = (size - inner.size[0]) // 2
+    canvas.alpha_composite(inner, (off, off))
+    canvas.convert("RGB").save(WEB / f"app-icon-{size}.png")
 print("ok", sorted(p.name for p in OUT.iterdir()))

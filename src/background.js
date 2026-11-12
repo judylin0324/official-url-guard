@@ -298,7 +298,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  chrome.storage.session.remove('verdict:' + tabId);
+  chrome.storage.session.remove(['verdict:' + tabId, 'adapter:' + tabId]);
   recentRedirect.delete(tabId);
 });
 
@@ -719,6 +719,19 @@ async function handle(msg, sender) {
         mismatches.push({ index: i, shown: a, actual: b });
       }
       return { levels, mismatches, settings: st.settings };
+    }
+
+    case 'adapterStatus': {
+      // 簡訊／通訊軟體網頁版：記下這個分頁找到幾則訊息，工具列視窗用來顯示「有沒有在自動檢查」
+      if (sender.tab) {
+        await chrome.storage.session.set({ ['adapter:' + sender.tab.id]: { id: String(msg.id || ''), name: String(msg.name || ''), found: Number(msg.found) || 0, at: Date.now() } });
+      }
+      return { ok: true };
+    }
+
+    case 'getAdapterStatus': {
+      const key = 'adapter:' + msg.tabId;
+      return (await chrome.storage.session.get(key))[key] || null;
     }
 
     case 'getTabVerdict': {

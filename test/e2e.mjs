@@ -115,6 +115,16 @@ PAGES['mail.google.com'] = gmail('年末調整による還付金のお支払い�
 PAGES['outlook.live.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>Outlook</title></head><body><div role="main">
   <div role="heading">牌照稅繳納通知</div><span title="監理服務網 <service@mvdis.gov.tw>">監理服務網</span>
   <div aria-label="Message body"><p>您好，本期使用牌照稅已開徵，請至監理服務網查詢：<a href="https://www.mvdis.gov.tw/">https://www.mvdis.gov.tw/</a></p></div></div></body></html>`;
+// 模擬 Google 訊息網頁版（簡訊）與 WhatsApp 網頁版：沿用各網站的元素名稱與 class
+PAGES['messages.google.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>Google 訊息</title></head><body><mws-conversation-container>
+  <mws-message-wrapper class="incoming"><mws-text-message-part id="sms-scam"><div class="text-msg-content"><div class="text-msg">【監理服務網】您有一筆交通違規罰鍰逾期未繳，請於今日內至 <a href="https://mvdis-gov-tw.cc/pay">https://mvdis-gov-tw.cc/pay</a> 繳納，以免加重處罰。</div></div></mws-text-message-part></mws-message-wrapper>
+  <mws-message-wrapper class="incoming"><mws-text-message-part id="sms-ok"><div class="text-msg-content"><div class="text-msg">媽，我今天會晚一點回家，晚餐不用等我喔，你們先吃。</div></div></mws-text-message-part></mws-message-wrapper>
+  <mws-message-wrapper class="outgoing"><mws-text-message-part id="sms-mine"><div class="text-msg-content"><div class="text-msg">我剛剛收到這個，是詐騙嗎？ https://mvdis-gov-tw.cc/pay 看起來怪怪的</div></div></mws-text-message-part></mws-message-wrapper>
+  </mws-conversation-container></body></html>`;
+PAGES['web.whatsapp.com'] = `<!doctype html><html><head><meta charset="utf-8"><title>WhatsApp</title></head><body><div id="main">
+  <div class="message-in"><div class="copyable-text"><span class="selectable-text" id="wa-otp">我的手機壞了收不到簡訊，等一下會有一組驗證碼傳到你手機，收到後把驗證碼傳給我，拜託很急</span></div></div>
+  <div class="message-in"><div class="copyable-text"><span class="selectable-text" id="wa-ok">週六下午三點在車站前集合，記得帶水和帽子，下雨就改期。</span></div></div>
+  </div></body></html>`;
 const fallback = `<!doctype html><html><head><meta charset="utf-8"><title>模擬頁</title></head><body><p>模擬頁</p></body></html>`;
 
 const userDataDir = mkdtempSync(path.join(tmpdir(), 'oug-'));
@@ -575,6 +585,35 @@ check('警告頁說明連結來自詐騙信', (await page.textContent('#reasons'
 await page.goto('https://outlook.live.com/mail/0/').catch(() => {});
 await settle(2500);
 check('Outlook 開啟正常的監理服務網通知不顯示警告', await page.evaluate(() => !document.querySelector('official-url-guard-mail')));
+
+// 18b. 簡訊（Google 訊息網頁版）與通訊軟體網頁版：自動檢查畫面上的訊息
+await page.goto('https://messages.google.com/web/conversations/1').catch(() => {});
+await settle(2500);
+const sms = await page.evaluate(() => {
+  const card = document.querySelector('official-url-guard-chat');
+  const lv = (id) => document.getElementById(id).getAttribute('data-oug-msg');
+  return { card: card ? { level: card.getAttribute('data-level'), text: card.shadowRoot.textContent } : null, scam: lv('sms-scam'), ok: lv('sms-ok'), mine: lv('sms-mine') };
+});
+check('Google 訊息：假監理站簡訊跳出浮動警告', sms.card && sms.card.level === 'danger' && /這則訊息很可能是詐騙/.test(sms.card.text), sms.card && sms.card.text.slice(0, 90));
+check('Google 訊息：詐騙簡訊加上紅框，並指出官方網址', sms.scam === 'danger' && sms.card && /mvdis\.gov\.tw/.test(sms.card.text));
+check('Google 訊息：一般簡訊、自己送出的訊息不標示', sms.ok === null && sms.mine === null, JSON.stringify({ ok: sms.ok, mine: sms.mine }));
+await page.screenshot({ path: path.join(SHOTS, '10-sms-warning.png') });
+const smsPopup = await context.newPage();
+await smsPopup.goto(`chrome-extension://${extId}/src/pages/popup.html?tabId=${await sw.evaluate(async () => (await chrome.tabs.query({ url: 'https://messages.google.com/*' }))[0].id)}`);
+await settle(800);
+check('工具列視窗顯示「正在自動檢查這個畫面上的訊息」', /Google 訊息（簡訊）：正在自動檢查/.test(await smsPopup.textContent('#current')), (await smsPopup.textContent('#current')).slice(-60));
+await smsPopup.close();
+await page.click('#sms-scam a');
+await waitUrl(page, /warning\.html/);
+check('點詐騙簡訊裡的連結會被攔截', page.url().includes('warning.html'), page.url().slice(0, 80));
+await page.goto('https://web.whatsapp.com/').catch(() => {});
+await settle(2500);
+const wa = await page.evaluate(() => ({
+  otp: document.getElementById('wa-otp').getAttribute('data-oug-msg'), tip: document.getElementById('wa-otp').title,
+  ok: document.getElementById('wa-ok').getAttribute('data-oug-msg'), card: !!document.querySelector('official-url-guard-chat'),
+}));
+check('WhatsApp：沒有連結但要你轉傳驗證碼的訊息加上提醒', wa.otp === 'caution' && /驗證碼/.test(wa.tip), wa.tip.slice(0, 80));
+check('WhatsApp：一般訊息不標示；只是「可疑」不跳浮動警告', wa.ok === null && wa.card === false);
 
 // 19. 設定頁
 const opt = await context.newPage();

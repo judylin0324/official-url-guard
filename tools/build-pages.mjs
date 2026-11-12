@@ -14,6 +14,8 @@ mkdirSync(out, { recursive: true });
 execFileSync(process.execPath, [path.join(root, 'tools/build-web.mjs')], { stdio: 'inherit' });
 copyFileSync(path.join(root, 'web/index.html'), path.join(out, 'index.html'));
 copyFileSync(path.join(root, 'web/privacy.html'), path.join(out, 'privacy.html'));
+// 安裝成手機 App、接收「分享」所需的檔案
+for (const f of ['manifest.webmanifest', 'sw.js', 'app-icon-192.png', 'app-icon-512.png']) copyFileSync(path.join(root, 'web', f), path.join(out, f));
 // Gmail 收件匣過濾（Apps Script）：讓使用者直接打開複製
 execFileSync(process.execPath, [path.join(root, 'tools/build-gmail.mjs')], { stdio: 'inherit' });
 mkdirSync(path.join(out, 'gmail'), { recursive: true });

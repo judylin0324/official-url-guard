@@ -1,0 +1,20 @@
+{
+  "name": "官網守門員簡訊檢查",
+  "short_name": "官網守門員",
+  "description": "收到可疑簡訊、LINE 訊息或 Email？分享或貼上整段訊息，不用點開連結就能確認網址是不是官方的。",
+  "lang": "zh-Hant-TW",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef2f0",
+  "theme_color": "#0c4a6e",
+  "icons": [
+    { "src": "app-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}

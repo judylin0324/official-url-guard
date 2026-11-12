@@ -79,6 +79,16 @@ async function refresh() {
   }
   $('current').replaceChildren(renderVerdict(v));
   actionButtons(v, tab);
+  // 簡訊、通訊軟體網頁版：告訴使用者這一頁的訊息有沒有在自動檢查
+  const ad = tab && /^https?:/i.test(url || '') ? await send({ type: 'getAdapterStatus', tabId: tab.id }) : null;
+  if (ad) {
+    $('current').append(h('div', {
+      class: 'age-line' + (ad.found ? '' : ' new'),
+      text: ad.found
+        ? `${ad.name}：正在自動檢查這個畫面上的訊息（${ad.found} 則）`
+        : `${ad.name}：找不到訊息內容，可能是網站改版了。請把訊息貼到下方檢查。`,
+    }));
+  }
 }
 
 async function manualCheck() {
