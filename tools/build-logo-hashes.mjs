@@ -215,6 +215,7 @@ function sameFamily(siteNames) {
 // 只出現在政府機關之間的（例如國徽）改成「政府網站」；跨到非政府機構的整組剔除
 const hashes = [];
 const used = new Set();
+const sharedDropped = new Set(); // 不同機構共用同一張圖的組合
 for (let i = 0; i < entries.length; i++) {
   if (used.has(i)) continue;
   const group = [i];
@@ -228,8 +229,13 @@ for (let i = 0; i < entries.length; i++) {
     }
   } else if (group.every((k) => entries[k].gov)) {
     hashes.push({ h: entries[i].h, site: null, domain: null, gov: true, kind: entries[i].kind });
+  } else {
+    sharedDropped.add([...sites].sort().join('／'));
   }
 }
+// 抓到了圖、卻因為和別的機構共用同一張圖而一個指紋都沒留下的機構（畫面上顯示 ✔，結果檔裡卻沒有）
+const keptSites = new Set(hashes.map((x) => x.site));
+const lostToSharing = [...new Set(entries.map((e) => e.site))].filter((name) => !keptSites.has(name));
 
 // 這次連不上或抓不到圖的機構，沿用上次的指紋（網站暫時故障、擋國外連線時不會被清掉）
 if (!process.argv.includes('--no-merge') && PREVIOUS && Array.isArray(PREVIOUS.hashes)) {
@@ -250,3 +256,8 @@ const list = (a) => `${a.length} 個${a.length ? `（${a.slice(0, 12).join('、'
 console.log(`\n完成：${n} 個機構，${out.sites} 個有指紋，共 ${hashes.length} 個指紋`);
 console.log(`連不上（國外執行時多半是擋國外連線）：${list(unreachable)}`);
 console.log(`連上了但抓不到圖：${list(noImage)}`);
+if (lostToSharing.length) {
+  console.log(`抓到圖但和其他機構共用、沒有留下指紋：${list(lostToSharing)}`);
+  console.log(`  共用同一張圖的組合：${[...sharedDropped].slice(0, 20).join('；')}`);
+  console.log('  如果它們其實是同一家公司，請在 src/data/official-sites.js 讓名稱或網域看得出關聯，或回報給維護者。');
+}
