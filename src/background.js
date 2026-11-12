@@ -75,7 +75,17 @@ async function dnrActive() {
   return dnrRuleCount > 0;
 }
 
-async function syncBlockRules() {
+// 同一時間只跑一次，依呼叫順序排隊。
+// 之前兩次同步可能交錯：較早開始、讀到舊清單的那一次反而較晚寫入規則，把剛加入的「信任」蓋掉，
+// 使用者按下「加入信任」後又被導回警告頁。排隊後，每一次都在前一次完成後才讀取最新狀態。
+let syncChain = Promise.resolve();
+function syncBlockRules() {
+  const run = syncChain.then(doSyncBlockRules, doSyncBlockRules);
+  syncChain = run.catch(() => {});
+  return run;
+}
+
+async function doSyncBlockRules() {
   statePromise = null; // 確保用的是剛寫入的清單
   const st = await getState();
   const existing = await chrome.declarativeNetRequest.getDynamicRules();
