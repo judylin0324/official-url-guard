@@ -113,6 +113,21 @@ async function manualCheck() {
   out.replaceChildren(...nodes);
 }
 
+// 從信件或網頁複製的內容，按鈕或文字背後常藏著真正的連結（畫面上看不到網址）。
+// 貼上時把這些隱藏連結一起列出來檢查。
+$('manualInput').addEventListener('paste', (e) => {
+  const cd = e.clipboardData;
+  const lib = globalThis.OUG_hiddenLinks;
+  if (!cd || !lib) return;
+  const plain = cd.getData('text/plain') || '';
+  const hiddenLinks = lib.hiddenLinksInHtml(cd.getData('text/html'), plain);
+  if (!hiddenLinks.length) return;
+  e.preventDefault();
+  const box = $('manualInput');
+  const insert = `${plain}\n${hiddenLinks.map((h) => `〔隱藏連結〕 ${h}`).join('\n')}\n`;
+  box.setRangeText(insert, box.selectionStart, box.selectionEnd, 'end');
+  manualCheck();
+});
 $('manualBtn').addEventListener('click', manualCheck);
 $('manualInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); manualCheck(); } });
 $('openOptions').addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });

@@ -54,6 +54,7 @@
       ],
       "js": [
         "src/adapters/message-sites.js",
+        "src/content/hidden-links.js",
         "src/content.js"
       ],
       "css": [

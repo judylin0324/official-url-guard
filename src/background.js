@@ -9,6 +9,7 @@ import { validateRemoteOfficial } from './lib/remote-official.js';
 import { decodeQr } from './lib/qr.js';
 import { dhash, matchLogo, validateLogoDb } from './lib/image-hash.js';
 import { LOGO_HASHES } from './data/logo-hashes.js';
+import './content/hidden-links.js'; // 設定 globalThis.OUG_hiddenLinks（找出程式碼裡藏的網址）
 
 const DEFAULT_REPORT_URL = 'https://fraudbuster.digiat.org.tw/accessibility/index';
 const DEFAULT_SETTINGS = {
@@ -244,6 +245,21 @@ async function getVerdict(tabId) {
   return data[key] || null;
 }
 
+/** 把「網頁裡藏著通往仿冒網址的跳轉」併進分頁的判斷結果（至少「可疑」） */
+async function withHidden(tabId, v) {
+  if (!v) return v;
+  const key = 'hidden:' + tabId;
+  const h = (await chrome.storage.session.get(key))[key];
+  if (!h || h.url !== v.url || ['official', 'gov', 'trusted'].includes(v.level)) return v;
+  const extra = h.items.map((it) => ({ text: `這個網頁的按鈕或程式會把你帶到「${it.host}」（${it.reason}）。點下去時會被攔截。`, weight: 40 }));
+  return {
+    ...v,
+    level: RANK[v.level] >= RANK.caution ? v.level : 'caution',
+    score: Math.max(v.score || 0, 40),
+    reasons: [...extra, ...v.reasons.filter((r) => r.weight > 0)],
+  };
+}
+
 const RANK = { skip: 0, invalid: 0, official: 1, gov: 1, trusted: 1, unknown: 2, platform: 3, caution: 4, danger: 5 };
 
 // ───────── 導航攔截 ─────────
@@ -298,7 +314,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  chrome.storage.session.remove(['verdict:' + tabId, 'adapter:' + tabId]);
+  chrome.storage.session.remove(['verdict:' + tabId, 'adapter:' + tabId, 'hidden:' + tabId]);
   recentRedirect.delete(tabId);
 });
 
@@ -539,6 +555,49 @@ async function prepareReport(url, title, { tabId = null, capture = false } = {})
   return { text, screenshot: shot ? shot.filename : null };
 }
 
+// ───────── 網頁外部載入的 .js 檔：下載後找出裡面藏的網址 ─────────
+// 詐騙頁常把真正的目的地藏在外部程式檔裡（按下按鈕才跳轉）。只回報「高度疑似詐騙」的網域。
+const SCRIPT_MAX_BYTES = 500000;
+const scriptCache = new Map(); // 程式檔網址 → 裡面出現的網域（同一個檔案不重複下載）
+async function scriptHosts(url) {
+  if (scriptCache.has(url)) return scriptCache.get(url);
+  let hosts = [];
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(url, { credentials: 'omit', signal: ctrl.signal });
+    if (res.ok && Number(res.headers.get('content-length') || 0) <= SCRIPT_MAX_BYTES) {
+      const code = (await res.text()).slice(0, SCRIPT_MAX_BYTES);
+      const found = new Set();
+      for (const u of globalThis.OUG_hiddenLinks.deepUrls(code)) {
+        try { found.add(new URL(u, url).hostname); } catch { /* 不是網址 */ }
+      }
+      hosts = [...found];
+    }
+  } catch { /* 下載不到就略過 */ } finally { clearTimeout(timer); }
+  if (scriptCache.size > 300) scriptCache.clear();
+  scriptCache.set(url, hosts);
+  return hosts;
+}
+
+async function scanScripts(urls, pageHost) {
+  const levels = {};
+  const seen = new Set();
+  for (const url of (urls || []).slice(0, 15)) {
+    let host;
+    try { host = new URL(url).hostname; } catch { continue; }
+    // 官方網站提供的程式檔（Google、金流服務的 SDK…）不用下載
+    if (['official', 'gov', 'trusted'].includes((await assess('https://' + host + '/')).level)) continue;
+    for (const h of await scriptHosts(url)) {
+      if (h === pageHost || seen.has(h)) continue;
+      seen.add(h);
+      const v = await assess('https://' + h + '/');
+      if (v.level === 'danger') levels[h] = { level: v.level, reason: v.reasons[0] ? v.reasons[0].text : '' };
+    }
+  }
+  return { levels };
+}
+
 // ───────── 涉詐網域清單更新 ─────────
 let updating = null;
 async function fetchText(url, ms = 30000) {
@@ -762,10 +821,25 @@ async function handle(msg, sender) {
       return (await chrome.storage.session.get(key))[key] || null;
     }
 
+    case 'hiddenDanger': {
+      // 網頁的按鈕或程式裡藏著通往仿冒網址的跳轉：記在這個分頁上，徽章至少亮橘色，工具列視窗會列出來
+      if (!sender.tab || !Array.isArray(msg.items) || !msg.items.length) return { ok: false };
+      const key = 'hidden:' + sender.tab.id;
+      const prev = (await chrome.storage.session.get(key))[key];
+      const items = prev && prev.url === sender.tab.url ? prev.items : [];
+      for (const it of msg.items.slice(0, 10)) {
+        if (!items.some((x) => x.host === it.host)) items.push({ host: String(it.host).slice(0, 255), reason: String(it.reason || '').slice(0, 300) });
+      }
+      await chrome.storage.session.set({ [key]: { url: sender.tab.url, items: items.slice(0, 10) } });
+      const merged = await withHidden(sender.tab.id, (await getVerdict(sender.tab.id)) || (await assess(sender.tab.url)));
+      await setBadge(sender.tab.id, merged);
+      return { ok: true };
+    }
+
     case 'getTabVerdict': {
       const v = await getVerdict(msg.tabId);
       if (v && msg.url && v.url !== msg.url) return assess(msg.url);
-      return v || (msg.url ? assess(msg.url) : null);
+      return withHidden(msg.tabId, v || (msg.url ? await assess(msg.url) : null));
     }
 
     case 'allowHost':
@@ -816,6 +890,9 @@ async function handle(msg, sender) {
 
     case 'logoCheck':
       return logoCheck(msg.items);
+
+    case 'scanScripts':
+      return scanScripts(msg.urls, String(msg.pageHost || ''));
 
     case 'decodeQr':
       return { texts: await decodeQrItems(msg.items) };

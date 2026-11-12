@@ -19,10 +19,12 @@ const parts = ['src/lib/domain.js', 'src/data/official-sites.js', 'src/data/risk
   return `// ── ${f} ──\n${code}`;
 });
 const engine = `window.OUG = (() => {\n${parts.join('\n')}\nreturn { buildContext, assessUrl, assessMessage, OFFICIAL_SITES, issueUrl, PROJECT };\n})();`;
+// 「看不到的連結」工具（一般指令碼，會設定 globalThis.OUG_hiddenLinks）
+const hidden = read('src/content/hidden-links.js');
 
 const template = read('web/template.html');
 if (!template.includes('/*ENGINE*/')) throw new Error('template 缺少 /*ENGINE*/');
-const fragment = template.replace('/*ENGINE*/', () => engine);
+const fragment = template.replace('/*ENGINE*/', () => `${engine}\n${hidden}`);
 writeFileSync(path.join(root, 'web/artifact.html'), fragment);
 writeFileSync(path.join(root, 'web/index.html'),
   `<!doctype html>\n<html lang="zh-Hant-TW">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<link rel="manifest" href="manifest.webmanifest">\n<meta name="theme-color" content="#0c4a6e">\n<link rel="apple-touch-icon" href="app-icon-192.png">\n</head>\n<body>\n${fragment}\n</body>\n</html>\n`);

@@ -132,7 +132,7 @@ footer { font-size: 13px; color: var(--ink-soft); display: flex; flex-direction:
       <button type="button" id="clear">清除</button>
       <button type="button" id="next">換一則範例</button>
     </div>
-    <p class="hint">全部在你的手機上判斷，訊息不會傳到任何地方，也不會開啟連結。</p>
+    <p class="hint">全部在你的手機上判斷，訊息不會傳到任何地方，也不會開啟連結。從信件或網頁複製貼上時，按鈕或文字背後看不到的連結也會一起檢查。</p>
   </form>
 
   <section id="results" aria-live="polite"></section>
@@ -275,6 +275,23 @@ footer { font-size: 13px; color: var(--ink-soft); display: flex; flex-direction:
   }
 
   $('form').addEventListener('submit', (e) => { e.preventDefault(); run(); });
+  // 從信件或網頁複製的內容，按鈕或文字背後常藏著真正的連結（畫面上看不到網址）。
+  // 貼上時把這些隱藏連結一起列出來檢查。
+  $('msg').addEventListener('paste', (e) => {
+    const cd = e.clipboardData;
+    const lib = globalThis.OUG_hiddenLinks;
+    if (!cd || !lib) return;
+    const plain = cd.getData('text/plain') || '';
+    const hiddenLinks = lib.hiddenLinksInHtml(cd.getData('text/html'), plain);
+    if (!hiddenLinks.length) return;
+    e.preventDefault();
+    const box = $('msg');
+    const insert = `${plain}\n${hiddenLinks.map((h) => `〔隱藏連結〕 ${h}`).join('\n')}\n`;
+    box.setRangeText(insert, box.selectionStart, box.selectionEnd, 'end');
+    $('exampleTag').hidden = true;
+    run();
+  });
+
   $('msg').addEventListener('input', () => { $('exampleTag').hidden = true; });
   $('clear').addEventListener('click', () => { $('msg').value = ''; $('exampleTag').hidden = true; $('results').replaceChildren(); $('msg').focus(); });
   $('next').addEventListener('click', () => { exampleIndex++; loadExample(exampleIndex); });

@@ -125,6 +125,19 @@ PAGES['web.whatsapp.com'] = `<!doctype html><html><head><meta charset="utf-8"><t
   <div class="message-in"><div class="copyable-text"><span class="selectable-text" id="wa-otp">我的手機壞了收不到簡訊，等一下會有一組驗證碼傳到你手機，收到後把驗證碼傳給我，拜託很急</span></div></div>
   <div class="message-in"><div class="copyable-text"><span class="selectable-text" id="wa-ok">週六下午三點在車站前集合，記得帶水和帽子，下雨就改期。</span></div></div>
   </div></body></html>`;
+// 看不到網址的詐騙導流頁：連結藏在按鈕的 onclick、網頁程式（按下才跳轉）、base64 與 data 屬性裡
+PAGES['hidden-link-notice.net'] = `<!doctype html><html><head><meta charset="utf-8"><title>通知</title></head><body><h1>您有一則未讀通知</h1>
+  <button id="btn-onclick" onclick="location.href='https://mvdis-gov-tw.cc/pay'">查詢罰單</button>
+  <button id="btn-js">立即繳費</button>
+  <div id="card" data-href="https://ctbc-bank.top/login">信用卡優惠</div>
+  <button id="btn-ok" onclick="location.href='https://www.mvdis.gov.tw/'">監理服務網</button>
+  <button id="btn-ext">領取補助</button>
+  <script>document.getElementById('btn-js').addEventListener('click', () => { window.location.href = atob('aHR0cHM6Ly93d3cubXZkaXMuZ292LnR3LnBheS1maW5lLnRvcC9sb2dpbg=='); });</script>
+  <script src="https://static-cdn-mock.net/app.min.js"></script>
+  </body></html>`;
+// 外部程式檔：目的地拆成好幾段、包在好幾層函式裡，按下按鈕才組起來
+const HIDDEN_JS = `(function(){var a=['https://www.ctbc','bank.com.verify-','login.top/otp'];function b(i){return a[i]}function c(){return (function(){return b(0)+b(1)+b(2)})()}
+  var parts='https://gov-tw-' + 'subsidy' + '.cyou/claim';document.getElementById('btn-ext').addEventListener('click',function(){setTimeout(function(){window['loc'+'ation']['hr'+'ef']=parts},50)})})();`;
 const fallback = `<!doctype html><html><head><meta charset="utf-8"><title>模擬頁</title></head><body><p>模擬頁</p></body></html>`;
 
 const userDataDir = mkdtempSync(path.join(tmpdir(), 'oug-'));
@@ -151,6 +164,7 @@ await context.route('**/*', (route) => {
   requestedHosts.add(u.hostname);
   if (!/^https?:$/.test(u.protocol)) return route.continue();
   if (u.hostname === 'cdn-qrimg.net') return route.fulfill({ status: 200, contentType: 'image/png', body: QR_TWQR });
+  if (u.hostname === 'static-cdn-mock.net') return route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body: HIDDEN_JS });
   if (u.hostname === 'img-cdn-mock.net') return route.fulfill({ status: 200, contentType: 'image/png', body: LOGO_PNG });
   if (u.hostname === 'judylin0324.github.io' && u.pathname.endsWith('/logo-hashes.json')) {
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(logoDb) });
@@ -640,6 +654,29 @@ const wa = await page.evaluate(() => ({
 }));
 check('WhatsApp：沒有連結但要你轉傳驗證碼的訊息加上提醒', wa.otp === 'caution' && /驗證碼/.test(wa.tip), wa.tip.slice(0, 80));
 check('WhatsApp：一般訊息不標示；只是「可疑」不跳浮動警告', wa.ok === null && wa.card === false);
+
+// 18c. 看不到的連結：網址藏在按鈕與網頁程式裡（畫面上沒有任何網址）
+await page.goto('https://hidden-link-notice.net/').catch(() => {});
+await settle(2500);
+const hid = await page.evaluate(() => Object.fromEntries(['btn-onclick', 'btn-js', 'card', 'btn-ok'].map((id) => [id, document.getElementById(id).getAttribute('data-oug-level')])));
+check('隱藏連結：按鈕 onclick、data 屬性裡的仿冒網址先標示出來；連到官網的按鈕不標示', hid['btn-onclick'] === 'danger' && hid.card === 'danger' && hid['btn-ok'] === null, JSON.stringify(hid));
+// 提醒文字顯示在封閉的 shadow DOM 裡，網頁（和測試）讀不到；改從工具列視窗確認同一份結果
+const hidPopup = await context.newPage();
+await hidPopup.goto(`chrome-extension://${extId}/src/pages/popup.html?tabId=${await sw.evaluate(async () => (await chrome.tabs.query({ url: 'https://hidden-link-notice.net/*' }))[0].id)}`);
+await settle(800);
+const hidToast = await hidPopup.textContent('#current');
+await hidPopup.close();
+check('隱藏連結：工具列視窗列出藏在按鈕裡的仿冒網址，燈號至少為可疑', /mvdis-gov-tw\.cc/.test(hidToast) && /按鈕或程式會把你帶到/.test(hidToast), hidToast.replace(/\s+/g, ' ').slice(0, 100));
+check('隱藏連結：網頁程式裡用 base64 藏起來的跳轉網址也找得到', /pay-fine\.top/.test(hidToast), hidToast.replace(/\s+/g, ' ').slice(0, 120));
+check('隱藏連結：外部 .js 檔裡拆成好幾段的網址也找得到', /gov-tw-subsidy\.cyou/.test(hidToast), hidToast.replace(/\s+/g, ' ').slice(-110));
+await page.click('#btn-ext');
+await waitUrl(page, /warning\.html/);
+check('隱藏連結：外部 .js 檔用混淆寫法跳轉，連線前攔截', page.url().includes('warning.html') && decodeURIComponent(page.url()).includes('gov-tw-subsidy.cyou'), page.url().slice(0, 90));
+await page.goto('https://hidden-link-notice.net/').catch(() => {});
+await settle(1500);
+await page.click('#btn-js');
+await waitUrl(page, /warning\.html/);
+check('隱藏連結：按下用 JavaScript 跳轉的按鈕，連線前攔截', page.url().includes('warning.html') && decodeURIComponent(page.url()).includes('pay-fine.top'), page.url().slice(0, 90));
 
 // 19. 設定頁
 const opt = await context.newPage();

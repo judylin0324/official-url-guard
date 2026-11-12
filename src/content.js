@@ -766,7 +766,7 @@
       if (elapsed > 600000) { mo.disconnect(); return; }
       if (deepCheck && !overlayShown && elapsed < 120000 && keyOf(detectFields()) !== lastKey) check();
       if (deepCheck && !overlayShown && elapsed < 120000) scanQr();
-      if (settings.markLinks) scanLinks();
+      if (settings.markLinks) { scanLinks(); scanHidden(); }
     }, 1200);
   });
 
@@ -828,6 +828,76 @@
       a.setAttribute('data-oug-level', 'caution');
       a.title = `⚠ 官網守門員：連結文字顯示「${mm.shown}」，實際卻連到「${mm.actual}」`;
     }
+  }
+
+  // ───────── 看不到的連結：按鈕、表單、自動跳轉、網頁程式裡藏的網址 ─────────
+  // 詐騙網頁常不顯示網址，按下按鈕才用 JavaScript 跳轉。這裡先把「會被帶去哪裡」找出來檢查；
+  // 找不到的（網址被拆開再組合）在真正連線時仍會被 background.js 攔截。
+  const hiddenSeen = new WeakSet();
+  const hiddenWarned = new Set();
+  const HIDDEN_SEL = '[onclick], [onmousedown], [ontouchstart], [data-href], [data-url], [data-link], [formaction], form[action], area[href], meta[http-equiv="refresh" i]';
+  async function scanHidden() {
+    const lib = globalThis.OUG_hiddenLinks;
+    if (!lib) return;
+    const byHost = new Map(); // 網域 → 會帶你過去的元素（來自網頁程式或自動跳轉的沒有對應元素）
+    const add = (url, source) => {
+      let u;
+      try { u = new URL(url, location.href); } catch { return; }
+      if (!/^https?:$/.test(u.protocol) || u.hostname === location.hostname) return;
+      if (!byHost.has(u.hostname)) byHost.set(u.hostname, []);
+      if (source) byHost.get(u.hostname).push(source);
+    };
+    for (const e of [...document.querySelectorAll(HIDDEN_SEL)].filter((x) => !hiddenSeen.has(x)).slice(0, 300)) {
+      hiddenSeen.add(e);
+      if (e.tagName === 'META') {
+        const m = /url\s*=\s*['"]?([^'"\s;]+)/i.exec(e.getAttribute('content') || '');
+        if (m) add(m[1], null);
+        continue;
+      }
+      if (e.tagName === 'FORM') add(e.getAttribute('action'), e);
+      if (e.tagName === 'AREA') add(e.getAttribute('href'), e);
+      for (const attr of ['onclick', 'onmousedown', 'ontouchstart']) {
+        const code = e.getAttribute(attr);
+        if (code) for (const url of [...lib.urlsIn(code), ...lib.navUrls(code)]) add(url, e);
+      }
+      for (const attr of ['data-href', 'data-url', 'data-link', 'formaction']) {
+        const v = e.getAttribute(attr);
+        if (v) add(v, e);
+      }
+    }
+    // 網頁內嵌的程式：官方網站只看跳轉指令；其他網站整段程式碼裡的網址都找（含拆字、base64、跳脫字元等藏法）
+    let budget = 600000; // 最多讀這麼多字元的網頁程式
+    for (const sc of document.querySelectorAll('script:not([src])')) {
+      if (hiddenSeen.has(sc)) continue;
+      hiddenSeen.add(sc);
+      const code = sc.textContent || '';
+      if (!code || code.length > budget) continue;
+      budget -= code.length;
+      for (const url of deepCheck ? lib.deepUrls(code) : lib.navUrls(code)) add(url, null);
+    }
+    // 外部載入的 .js 檔：內容指令碼讀不到別的網站的檔案內容，交給背景程式下載後掃描（不帶 Cookie）
+    const external = deepCheck
+      ? [...document.querySelectorAll('script[src]')].filter((sc) => !hiddenSeen.has(sc)).slice(0, 15).map((sc) => { hiddenSeen.add(sc); return sc.src; }).filter((u) => /^https?:/i.test(u))
+      : [];
+    const deep = external.length ? await send({ type: 'scanScripts', urls: external, pageHost: location.hostname }) : null;
+    const levels = {};
+    if (byHost.size) Object.assign(levels, ((await send({ type: 'scanLinks', hosts: [...byHost.keys()], pairs: [] })) || {}).levels);
+    if (deep && deep.levels) for (const [host, hit] of Object.entries(deep.levels)) { levels[host] = hit; if (!byHost.has(host)) byHost.set(host, []); }
+    const fresh = [];
+    for (const [host, sources] of byHost) {
+      const hit = levels[host];
+      if (!hit) continue;
+      for (const e of sources) {
+        e.setAttribute('data-oug-level', hit.level);
+        e.title = `⚠ 官網守門員：按下去會連到 ${host}。${hit.reason}`;
+      }
+      if (hit.level === 'danger' && !hiddenWarned.has(host)) {
+        hiddenWarned.add(host);
+        fresh.push({ host, reason: hit.reason });
+        toast(`這個網頁的按鈕或程式會把你帶到「${host}」。\n${hit.reason}\n點下去時官網守門員會攔下來。`, 12000);
+      }
+    }
+    if (fresh.length) send({ type: 'hiddenDanger', items: fresh });
   }
 
   // ───────── 網頁信箱、簡訊與通訊軟體網頁版：檢查寄件人、內文與連結 ─────────
@@ -1020,7 +1090,7 @@
       // 圖片還沒下載完的，等網頁載入完成再找一次
       if (document.readyState !== 'complete') window.addEventListener('load', () => setTimeout(scanQr, 300), { once: true });
     }
-    if (settings.markLinks) scanLinks();
+    if (settings.markLinks) { scanLinks(); scanHidden(); }
     if (document.body) mo.observe(document.body, { childList: true, subtree: true });
   }
 
