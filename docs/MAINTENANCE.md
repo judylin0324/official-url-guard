@@ -53,7 +53,12 @@ npx playwright install chromium
 node tools/build-logo-hashes.mjs
 ```
 
-完成後把 `src/data/logo-hashes.js` 提交到 GitHub。之後每週的自動更新會沿用這些指紋。Windows 可以直接執行 `tools\build-logo-hashes.cmd`。
+完成後把 `src/data/logo-hashes.js` 提交到 GitHub。之後每週的自動更新會沿用這些指紋。
+
+Windows 可以直接雙擊：
+
+- `tools\build-logo-hashes.cmd`：全部重建（20–40 分鐘）。
+- `tools\build-logo-hashes-missing.cmd`：只補還沒有指紋的機構，並開啟看得到的瀏覽器視窗（幾分鐘）。有些網站在背景模式下不提供圖片，用一般視窗才抓得到；遇到驗證畫面的網站會跳過。
 
 ### 發行新版本
 
