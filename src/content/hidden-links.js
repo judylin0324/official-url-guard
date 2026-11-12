@@ -38,9 +38,40 @@
   const HTTP_URL = /https?:\/\/[a-z0-9\u00a1-\uffff][a-z0-9\u00a1-\uffff.-]*\.[a-z\u00a1-\uffff]{2,}(?::\d+)?(?:\/[^\s'"`<>)\\]*)?/gi;
   const MAX_DEEP = 300;
 
-  /** 把常見的藏法還原成看得懂的字串 */
-  function reveal(code) {
+  // 打包器（Dean Edwards packer）：eval(function(p,a,c,k,e,d){…}('內容',進位,數量,'字1|字2|…'.split('|'),0,{}))
+  // 不執行程式，直接照它的規則把代號換回原本的字
+  const PACKED = /\}\s*\(\s*'((?:[^'\\]|\\.){20,})'\s*,\s*(\d{1,2})\s*,\s*\d{1,5}\s*,\s*'((?:[^'\\]|\\.)*)'\s*\.split\(\s*'\|'\s*\)/g;
+  function unpack(code) {
+    let out = '';
+    for (const m of String(code || '').matchAll(PACKED)) {
+      const radix = Number(m[2]);
+      if (radix < 2 || radix > 62) continue;
+      const words = m[3].split('|');
+      const toIndex = (tok) => {
+        let n = 0;
+        for (const ch of tok) {
+          const c = ch.charCodeAt(0);
+          const d = c <= 57 ? c - 48 : c >= 97 ? c - 87 : c - 29; // 0-9、a-z（10–35）、A-Z（36–61）
+          if (d < 0 || d >= radix) return -1;
+          n = n * radix + d;
+        }
+        return n;
+      };
+      const payload = m[1].replace(/\\'/g, "'").replace(/\\\\/g, '\\');
+      out += '\n' + payload.replace(/\b\w+\b/g, (tok) => { const i = toIndex(tok); return i >= 0 && words[i] ? words[i] : tok; });
+    }
+    return out;
+  }
+
+  // 字串陣列混淆（javascript-obfuscator 等工具）：所有字串編成 base64 放進陣列，常用大小寫對調的字母表
+  const B64_LITERAL = /['"`]([A-Za-z0-9+/]{16,800}={0,2})['"`]/g;
+  const swapCase = (s) => s.replace(/[a-zA-Z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+  const readable = (s) => /^[\x20-\x7e\u00a1-\uffff]+$/.test(s);
+
+  /** 把常見的藏法還原成看得懂的字串；解出來的結果再解一次（最多三層），對付多層包裝 */
+  function reveal(code, depth = 0) {
     let s = String(code || '');
+    if (depth === 0) s += unpack(s);
     // 字串拆開再相加：'https://mvdis-' + 'gov-tw' + ".cc" → 'https://mvdis-gov-tw.cc'（重複幾次以處理三段以上）
     for (let i = 0; i < 4; i++) s = s.replace(/(['"`])\s*\+\s*(['"`])/g, '');
     // 跳脫字元：\x68\x74\x74\x70、\u0068…、\/
@@ -48,8 +79,15 @@
       .replace(/\\u([0-9a-f]{4})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
       .replace(/\\\//g, '/');
     const extra = [];
-    // base64：'aHR0cHM6Ly9…'（「http」編碼後一定以 aHR0c 開頭）
-    for (const m of s.matchAll(/['"`](aHR0c[A-Za-z0-9+/=]{8,800})['"`]/g)) extra.push(decode(m[1]));
+    // base64 字串：標準字母表與大小寫對調的字母表都試；解出來像文字才採用
+    let tried = 0;
+    for (const m of s.matchAll(B64_LITERAL)) {
+      if (++tried > 3000) break;
+      for (const variant of [m[1], swapCase(m[1])]) {
+        const d = decode(variant);
+        if (d && d.length >= 8 && readable(d) && (/https?:|\/\/|%[0-9a-f]{2}/i.test(d) || /^[A-Za-z0-9+/]{16,}={0,2}$/.test(d))) extra.push(d);
+      }
+    }
     // 百分比編碼：%68%74%74%70…
     for (const m of s.matchAll(/%68%74%74%70(?:%[0-9a-f]{2}|[\w.~\-/:?=&])+/gi)) { try { extra.push(decodeURIComponent(m[0])); } catch { /* 不是合法編碼 */ } }
     // String.fromCharCode(104,116,116,112,…)
@@ -58,7 +96,10 @@
     }
     // 整串倒過來寫：'cc.wt-vog-sidvm//:sptth'.split('').reverse().join('')
     for (const m of s.matchAll(/['"`]([^'"`\s]{6,400}\/\/:s?ptth)['"`]/g)) extra.push([...m[1]].reverse().join(''));
-    return extra.length ? `${s}\n${extra.join('\n')}` : s;
+    if (!extra.length) return s;
+    // 解出來的字串加上引號再解一次（base64 裡面再包一層 base64、編碼裡再拆字）
+    const inner = extra.map((x) => `'${x}'`).join('\n');
+    return `${s}\n${depth < 2 ? reveal(inner, depth + 1) : inner}`;
   }
 
   /** 程式碼裡出現的所有網址（含被藏起來的）。比 navUrls 寬，只用在不是官方網站的頁面 */
@@ -80,5 +121,5 @@
     return [...new Set(hrefs.filter((h) => /^https?:\/\//i.test(h) && !plain.includes(h)))].slice(0, 20);
   }
 
-  globalThis.OUG_hiddenLinks = { urlsIn, navUrls, deepUrls, reveal, hiddenLinksInHtml };
+  globalThis.OUG_hiddenLinks = { urlsIn, navUrls, deepUrls, reveal, unpack, hiddenLinksInHtml };
 })();

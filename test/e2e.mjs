@@ -134,6 +134,13 @@ PAGES['hidden-link-notice.net'] = `<!doctype html><html><head><meta charset="utf
   <button id="btn-ext">領取補助</button>
   <script>document.getElementById('btn-js').addEventListener('click', () => { window.location.href = atob('aHR0cHM6Ly93d3cubXZkaXMuZ292LnR3LnBheS1maW5lLnRvcC9sb2dpbg=='); });</script>
   <script src="https://static-cdn-mock.net/app.min.js"></script>
+  <iframe id="frame" src="https://www.post.gov.tw.parcel-fee.top/form" width="300" height="80"></iframe>
+  <script>
+    // 執行時才組出來的網址：base64 拆成兩段，靜態掃描看不出來，要等程式解碼才知道
+    var seg = ['aHR0cHM6Ly9mZXRjLWV0', 'YWctcGF5LnRvcC9iaWxs']; window.__dest = atob(seg.join(''));
+    // 目的地由伺服器回傳
+    fetch('/oug-config.json').then(function (r) { return r.json(); }).then(function (c) { window.__next = c.next; });
+  </script>
   </body></html>`;
 // 外部程式檔：目的地拆成好幾段、包在好幾層函式裡，按下按鈕才組起來
 const HIDDEN_JS = `(function(){var a=['https://www.ctbc','bank.com.verify-','login.top/otp'];function b(i){return a[i]}function c(){return (function(){return b(0)+b(1)+b(2)})()}
@@ -164,6 +171,7 @@ await context.route('**/*', (route) => {
   requestedHosts.add(u.hostname);
   if (!/^https?:$/.test(u.protocol)) return route.continue();
   if (u.hostname === 'cdn-qrimg.net') return route.fulfill({ status: 200, contentType: 'image/png', body: QR_TWQR });
+  if (u.pathname === '/oug-config.json') return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"next":"https:\\/\\/nhi-gov-tw.cyou\\/refund"}' });
   if (u.hostname === 'static-cdn-mock.net') return route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body: HIDDEN_JS });
   if (u.hostname === 'img-cdn-mock.net') return route.fulfill({ status: 200, contentType: 'image/png', body: LOGO_PNG });
   if (u.hostname === 'judylin0324.github.io' && u.pathname.endsWith('/logo-hashes.json')) {
@@ -660,15 +668,27 @@ await page.goto('https://hidden-link-notice.net/').catch(() => {});
 await settle(2500);
 const hid = await page.evaluate(() => Object.fromEntries(['btn-onclick', 'btn-js', 'card', 'btn-ok'].map((id) => [id, document.getElementById(id).getAttribute('data-oug-level')])));
 check('隱藏連結：按鈕 onclick、data 屬性裡的仿冒網址先標示出來；連到官網的按鈕不標示', hid['btn-onclick'] === 'danger' && hid.card === 'danger' && hid['btn-ok'] === null, JSON.stringify(hid));
+const hidFrame = await page.evaluate(() => document.getElementById('frame').getAttribute('data-oug-level'));
 // 提醒文字顯示在封閉的 shadow DOM 裡，網頁（和測試）讀不到；改從工具列視窗確認同一份結果
 const hidPopup = await context.newPage();
 await hidPopup.goto(`chrome-extension://${extId}/src/pages/popup.html?tabId=${await sw.evaluate(async () => (await chrome.tabs.query({ url: 'https://hidden-link-notice.net/*' }))[0].id)}`);
 await settle(800);
 const hidToast = await hidPopup.textContent('#current');
 await hidPopup.close();
+check('工具列視窗：離開通訊軟體網頁後不再顯示「正在自動檢查訊息」', !/正在自動檢查這個畫面上的訊息/.test(hidToast));
+// 工具列視窗只列出前幾項理由；完整的清單直接讀擴充功能記在這個分頁上的結果
+const hidItems = await sw.evaluate(async () => {
+  const [tab] = await chrome.tabs.query({ url: 'https://hidden-link-notice.net/*' });
+  const key = 'hidden:' + tab.id;
+  return ((await chrome.storage.session.get(key))[key] || { items: [] }).items;
+});
+const hidHas = (host, weak = false) => hidItems.some((x) => x.host === host && Boolean(x.weak) === weak);
 check('隱藏連結：工具列視窗列出藏在按鈕裡的仿冒網址，燈號至少為可疑', /mvdis-gov-tw\.cc/.test(hidToast) && /按鈕或程式會把你帶到/.test(hidToast), hidToast.replace(/\s+/g, ' ').slice(0, 100));
-check('隱藏連結：網頁程式裡用 base64 藏起來的跳轉網址也找得到', /pay-fine\.top/.test(hidToast), hidToast.replace(/\s+/g, ' ').slice(0, 120));
-check('隱藏連結：外部 .js 檔裡拆成好幾段的網址也找得到', /gov-tw-subsidy\.cyou/.test(hidToast), hidToast.replace(/\s+/g, ' ').slice(-110));
+check('隱藏連結：網頁程式裡用 base64 藏起來的跳轉網址也找得到', hidHas('www.mvdis.gov.tw.pay-fine.top'), hidToast.replace(/\s+/g, ' ').slice(0, 120));
+check('隱藏連結：內嵌框架來自仿冒網址時標示出來', hidFrame === 'danger' && hidHas('www.post.gov.tw.parcel-fee.top'), String(hidFrame));
+check('隱藏連結：執行時才解碼出來的網址（靜態掃描看不到）也找得到', hidHas('fetc-etag-pay.top'), JSON.stringify(hidItems.map((x) => x.host)));
+check('隱藏連結：伺服器回傳的資料裡的仿冒網址記為較弱的線索（不跳提醒）', hidHas('nhi-gov-tw.cyou', true));
+check('隱藏連結：外部 .js 檔裡拆成好幾段的網址也找得到', hidHas('gov-tw-subsidy.cyou'));
 await page.click('#btn-ext');
 await waitUrl(page, /warning\.html/);
 check('隱藏連結：外部 .js 檔用混淆寫法跳轉，連線前攔截', page.url().includes('warning.html') && decodeURIComponent(page.url()).includes('gov-tw-subsidy.cyou'), page.url().slice(0, 90));

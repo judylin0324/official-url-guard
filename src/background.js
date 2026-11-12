@@ -251,12 +251,16 @@ async function withHidden(tabId, v) {
   const key = 'hidden:' + tabId;
   const h = (await chrome.storage.session.get(key))[key];
   if (!h || h.url !== v.url || ['official', 'gov', 'trusted'].includes(v.level)) return v;
-  const extra = h.items.map((it) => ({ text: `這個網頁的按鈕或程式會把你帶到「${it.host}」（${it.reason}）。點下去時會被攔截。`, weight: 40 }));
+  // weak：網域只是出現在伺服器回傳的資料裡（可能是別人貼的內容），列出來但不改變燈號
+  const extra = h.items.map((it) => (it.weak
+    ? { text: `這個網頁載入的資料裡出現仿冒網址「${it.host}」（${it.reason}）。如果網頁要你前往，點下去時會被攔截。`, weight: 0 }
+    : { text: `這個網頁的按鈕或程式會把你帶到「${it.host}」（${it.reason}）。點下去時會被攔截。`, weight: 40 }));
+  const strong = extra.some((r) => r.weight > 0);
   return {
     ...v,
-    level: RANK[v.level] >= RANK.caution ? v.level : 'caution',
-    score: Math.max(v.score || 0, 40),
-    reasons: [...extra, ...v.reasons.filter((r) => r.weight > 0)],
+    level: !strong || RANK[v.level] >= RANK.caution ? v.level : 'caution',
+    score: strong ? Math.max(v.score || 0, 40) : v.score,
+    reasons: [...extra, ...(strong ? v.reasons.filter((r) => r.weight > 0) : v.reasons)],
   };
 }
 
@@ -811,14 +815,20 @@ async function handle(msg, sender) {
     case 'adapterStatus': {
       // 簡訊／通訊軟體網頁版：記下這個分頁找到幾則訊息，工具列視窗用來顯示「有沒有在自動檢查」
       if (sender.tab) {
-        await chrome.storage.session.set({ ['adapter:' + sender.tab.id]: { id: String(msg.id || ''), name: String(msg.name || ''), found: Number(msg.found) || 0, at: Date.now() } });
+        await chrome.storage.session.set({ ['adapter:' + sender.tab.id]: { id: String(msg.id || ''), name: String(msg.name || ''), found: Number(msg.found) || 0, host: parseHost(new URL(sender.tab.url).hostname).host, at: Date.now() } });
       }
       return { ok: true };
     }
 
     case 'getAdapterStatus': {
       const key = 'adapter:' + msg.tabId;
-      return (await chrome.storage.session.get(key))[key] || null;
+      const ad = (await chrome.storage.session.get(key))[key];
+      if (!ad) return null;
+      // 分頁已經離開那個網站就不再顯示
+      const tab = await chrome.tabs.get(msg.tabId).catch(() => null);
+      let host = '';
+      try { host = parseHost(new URL(tab.url).hostname).host; } catch { /* 沒有網址 */ }
+      return host === ad.host ? ad : null;
     }
 
     case 'hiddenDanger': {
@@ -828,7 +838,9 @@ async function handle(msg, sender) {
       const prev = (await chrome.storage.session.get(key))[key];
       const items = prev && prev.url === sender.tab.url ? prev.items : [];
       for (const it of msg.items.slice(0, 10)) {
-        if (!items.some((x) => x.host === it.host)) items.push({ host: String(it.host).slice(0, 255), reason: String(it.reason || '').slice(0, 300) });
+        const old = items.find((x) => x.host === it.host);
+        if (old) { if (!it.weak) old.weak = false; continue; }
+        items.push({ host: String(it.host).slice(0, 255), reason: String(it.reason || '').slice(0, 300), weak: Boolean(it.weak) });
       }
       await chrome.storage.session.set({ [key]: { url: sender.tab.url, items: items.slice(0, 10) } });
       const merged = await withHidden(sender.tab.id, (await getVerdict(sender.tab.id)) || (await assess(sender.tab.url)));

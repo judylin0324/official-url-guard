@@ -42,7 +42,8 @@
         "https://*/*"
       ],
       "js": [
-        "src/page-watch.js"
+        "src/page-watch.js",
+        "src/page-links.js"
       ],
       "run_at": "document_start",
       "world": "MAIN"

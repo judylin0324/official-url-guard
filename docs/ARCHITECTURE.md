@@ -50,6 +50,7 @@
 | 導航時 | `background.js` → `assessUrl` | 仿冒網址顯示警告頁；結果存進分頁狀態、更新徽章 |
 | 網頁載入後 | `content.js` 擷取訊號 → `background.js` → `assessPage` | 比對「自稱是誰」「要你做什麼」與網址 |
 | 網頁載入後 | `content.js` 用 `src/content/hidden-links.js` 掃描按鈕、內嵌程式；外部 .js 檔交給 `background.js` 下載掃描 | 找出藏在按鈕與程式裡的跳轉網址（先解開常見混淆），通往仿冒網址就提醒 |
+| 網頁程式執行時 | `page-links.js`（網頁環境）→ `content.js` | 觀察解碼函式輸出、`window.open`、伺服器回傳的資料裡出現的網域，交給引擎檢查 |
 | 開信、看訊息時 | `content.js` 依 `src/adapters/message-sites.js` 讀取內容 → `assessMessage` | 信件上方警告；簡訊與聊天訊息浮動警告或外框 |
 | 送出卡號、驗證碼前 | `content.js`、`page-watch.js` | 送出前確認；偵測打字途中偷傳卡號 |
 

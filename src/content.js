@@ -835,7 +835,53 @@
   // 找不到的（網址被拆開再組合）在真正連線時仍會被 background.js 攔截。
   const hiddenSeen = new WeakSet();
   const hiddenWarned = new Set();
-  const HIDDEN_SEL = '[onclick], [onmousedown], [ontouchstart], [data-href], [data-url], [data-link], [formaction], form[action], area[href], meta[http-equiv="refresh" i]';
+  const HIDDEN_SEL = '[onclick], [onmousedown], [ontouchstart], [data-href], [data-url], [data-link], [formaction], form[action], area[href], meta[http-equiv="refresh" i], iframe[src], frame[src], embed[src], object[data]';
+  /** 整份文件加上開放式 shadow DOM（元件化網頁把按鈕包在裡面，一般的查詢找不到） */
+  function scanRoots() {
+    const out = [document];
+    if (!deepCheck) return out;
+    let n = 0;
+    const walk = (root) => {
+      for (const e of root.querySelectorAll('*')) {
+        if (++n > 8000) return;
+        if (e.shadowRoot) { out.push(e.shadowRoot); walk(e.shadowRoot); }
+      }
+    };
+    walk(document);
+    return out;
+  }
+  /** 找到通往仿冒網址的跳轉：提醒使用者，並記到這個分頁的判斷結果（weak＝只是出現在伺服器回傳的資料裡，不跳提醒） */
+  function reportHidden(found) {
+    const fresh = found.filter((f) => !hiddenWarned.has(f.host));
+    if (!fresh.length) return;
+    for (const f of fresh) {
+      hiddenWarned.add(f.host);
+      if (!f.weak) toast(`這個網頁的按鈕或程式會把你帶到「${f.host}」。\n${f.reason}\n點下去時官網守門員會攔下來。`, 12000);
+    }
+    send({ type: 'hiddenDanger', items: fresh });
+  }
+  // 網頁程式執行時解出或取得的網址（src/page-links.js 在網頁環境裡觀察，只回報網域）
+  const revealQueue = new Map(); // 網域 → 來源（code／data）
+  let revealTimer = null;
+  window.addEventListener('message', (e) => {
+    const d = e.data;
+    if (e.source !== window || !d || d.__oug !== 'reveal' || !Array.isArray(d.items) || !deepCheck) return;
+    for (const it of d.items.slice(0, 100)) {
+      if (!it || typeof it.host !== 'string' || it.host.length > 255 || hiddenWarned.has(it.host)) continue;
+      if (revealQueue.get(it.host) !== 'code') revealQueue.set(it.host, it.src === 'code' ? 'code' : 'data');
+    }
+    clearTimeout(revealTimer);
+    revealTimer = setTimeout(async () => {
+      const batch = new Map(revealQueue);
+      revealQueue.clear();
+      if (!batch.size) return;
+      const res = await send({ type: 'scanLinks', hosts: [...batch.keys()], pairs: [] });
+      if (!res) return;
+      reportHidden([...batch].filter(([host]) => res.levels[host] && res.levels[host].level === 'danger')
+        .map(([host, src]) => ({ host, reason: res.levels[host].reason, weak: src !== 'code' })));
+    }, 600);
+  });
+
   async function scanHidden() {
     const lib = globalThis.OUG_hiddenLinks;
     if (!lib) return;
@@ -847,8 +893,12 @@
       if (!byHost.has(u.hostname)) byHost.set(u.hostname, []);
       if (source) byHost.get(u.hostname).push(source);
     };
-    for (const e of [...document.querySelectorAll(HIDDEN_SEL)].filter((x) => !hiddenSeen.has(x)).slice(0, 300)) {
+    const roots = scanRoots();
+    for (const e of roots.flatMap((r) => [...r.querySelectorAll(HIDDEN_SEL)]).filter((x) => !hiddenSeen.has(x)).slice(0, 300)) {
       hiddenSeen.add(e);
+      // 內嵌框架、嵌入物件：整塊畫面其實來自別的網站
+      if (/^(IFRAME|FRAME|EMBED)$/.test(e.tagName)) { add(e.getAttribute('src'), e); continue; }
+      if (e.tagName === 'OBJECT') { add(e.getAttribute('data'), e); continue; }
       if (e.tagName === 'META') {
         const m = /url\s*=\s*['"]?([^'"\s;]+)/i.exec(e.getAttribute('content') || '');
         if (m) add(m[1], null);
@@ -867,7 +917,7 @@
     }
     // 網頁內嵌的程式：官方網站只看跳轉指令；其他網站整段程式碼裡的網址都找（含拆字、base64、跳脫字元等藏法）
     let budget = 600000; // 最多讀這麼多字元的網頁程式
-    for (const sc of document.querySelectorAll('script:not([src])')) {
+    for (const sc of roots.flatMap((r) => [...r.querySelectorAll('script:not([src])')])) {
       if (hiddenSeen.has(sc)) continue;
       hiddenSeen.add(sc);
       const code = sc.textContent || '';
@@ -883,21 +933,17 @@
     const levels = {};
     if (byHost.size) Object.assign(levels, ((await send({ type: 'scanLinks', hosts: [...byHost.keys()], pairs: [] })) || {}).levels);
     if (deep && deep.levels) for (const [host, hit] of Object.entries(deep.levels)) { levels[host] = hit; if (!byHost.has(host)) byHost.set(host, []); }
-    const fresh = [];
+    const found = [];
     for (const [host, sources] of byHost) {
       const hit = levels[host];
       if (!hit) continue;
       for (const e of sources) {
         e.setAttribute('data-oug-level', hit.level);
-        e.title = `⚠ 官網守門員：按下去會連到 ${host}。${hit.reason}`;
+        e.title = `⚠ 官網守門員：${/^(IFRAME|FRAME|EMBED|OBJECT)$/.test(e.tagName) ? '這一塊內容來自' : '按下去會連到'} ${host}。${hit.reason}`;
       }
-      if (hit.level === 'danger' && !hiddenWarned.has(host)) {
-        hiddenWarned.add(host);
-        fresh.push({ host, reason: hit.reason });
-        toast(`這個網頁的按鈕或程式會把你帶到「${host}」。\n${hit.reason}\n點下去時官網守門員會攔下來。`, 12000);
-      }
+      if (hit.level === 'danger') found.push({ host, reason: hit.reason });
     }
-    if (fresh.length) send({ type: 'hiddenDanger', items: fresh });
+    reportHidden(found);
   }
 
   // ───────── 網頁信箱、簡訊與通訊軟體網頁版：檢查寄件人、內文與連結 ─────────
@@ -1083,6 +1129,8 @@
     if (pre) {
       settings = pre.settings || settings;
       deepCheck = !['official', 'gov', 'trusted', 'skip'].includes(pre.level);
+      // 官方網站：請網頁環境裡的觀察程式不要讀伺服器回傳的資料
+      if (!deepCheck) { try { window.postMessage({ __oug: 'deep-off' }, '*'); } catch { /* 忽略 */ } }
     }
     if (deepCheck) {
       check();
