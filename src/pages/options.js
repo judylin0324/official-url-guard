@@ -2,7 +2,7 @@ import { h, send } from './ui.js';
 import { parseDomainList, parseLineIdList } from '../lib/blocklist.js';
 import { normalizeDomain } from '../lib/domain.js';
 import { OFFICIAL_SITES } from '../data/official-sites.js';
-import { LIST_SOURCES } from '../data/list-sources.js';
+import { LIST_SOURCES, FEED } from '../data/list-sources.js';
 import { sanitizeDomains } from '../lib/blocklist.js';
 import { buildContext } from '../lib/checker.js';
 
@@ -34,11 +34,15 @@ async function renderBlocklistStat() {
     ? `已收錄 ${(auto.length + manual.length).toLocaleString()} 個涉詐網域` + (blocklist165 ? `（更新於 ${new Date(blocklist165.updatedAt).toLocaleString('zh-TW', { hour12: false })}）` : '')
     : '尚未下載，按「立即更新」取得清單';
   const status = new Map(((blocklist165 && blocklist165.sources) || []).map((r) => [r.id, r]));
-  $('blSources').replaceChildren(...LIST_SOURCES.map((src) => {
+  $('blSources').replaceChildren(...[FEED, ...LIST_SOURCES].map((src) => {
     const r = status.get(src.id);
+    const text = !r ? '尚未更新'
+      : !r.ok ? `無法下載（${r.error}）`
+        : r.viaFeed ? `${(r.count || 0).toLocaleString()} 筆（已包含在彙整清單）`
+          : `${r.count.toLocaleString()} 筆`;
     return h('li', {}, [
       h('a', { href: src.page, target: '_blank', rel: 'noopener', text: src.name }),
-      r ? h('span', { class: r.ok ? 'ok' : 'bad', text: r.ok ? `${r.count.toLocaleString()} 筆` : `無法下載（${r.error}）` }) : h('span', { class: 'muted', text: '尚未更新' }),
+      h('span', { class: !r ? 'muted' : r.ok ? 'ok' : 'bad', text }),
     ]);
   }));
   $('manualStat').textContent = manual.length ? `手動匯入：${manual.length.toLocaleString()} 個網域（${blocklistManual.source}）` : '';

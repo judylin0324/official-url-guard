@@ -3,7 +3,7 @@ import { buildContext, assessUrl, assessPage, assessMessage } from './lib/checke
 import { parseHost, normalizeDomain, isIp } from './lib/domain.js';
 import { parseDomainList, sanitizeDomains } from './lib/blocklist.js';
 import { OFFICIAL_SITES } from './data/official-sites.js';
-import { LIST_SOURCES } from './data/list-sources.js';
+import { LIST_SOURCES, FEED } from './data/list-sources.js';
 import { issueUrl, PROJECT } from './data/project.js';
 import { validateRemoteOfficial } from './lib/remote-official.js';
 import { decodeQr } from './lib/qr.js';
@@ -553,6 +553,25 @@ async function fetchText(url, ms = 30000) {
   }
 }
 
+/** 下載本專案的每日彙整清單。太舊、太少或下載不到都算失敗，由呼叫端改用原始來源 */
+async function fetchFeed() {
+  const fail = (error) => ({ ok: false, result: { id: FEED.id, name: FEED.name, ok: false, error } });
+  try {
+    const meta = JSON.parse(await fetchText(FEED.metaUrl, 15000));
+    const age = (Date.now() - Date.parse(meta.generatedAt)) / 86400000;
+    if (!(age <= FEED.maxAgeDays)) return fail(`彙整清單超過 ${FEED.maxAgeDays} 天沒有更新，改用原始來源`);
+    const domains = parseDomainList(await fetchText(FEED.url));
+    if (domains.length < FEED.minCount) return fail('彙整清單筆數異常，改用原始來源');
+    return {
+      ok: true, domains,
+      sources: new Map((meta.sources || []).map((x) => [x.id, x])),
+      result: { id: FEED.id, name: FEED.name, ok: true, count: domains.length, generatedAt: meta.generatedAt },
+    };
+  } catch (e) {
+    return fail(e.name === 'AbortError' ? '連線逾時' : '無法下載，改用原始來源');
+  }
+}
+
 async function update165() {
   if (updating) return updating; // 避免同時跑兩次
   updating = (async () => {
@@ -561,7 +580,16 @@ async function update165() {
     if (st.settings.feedUrl) sources.push({ id: 'custom', name: '自訂清單網址', url: st.settings.feedUrl });
     const results = [];
     const all = [];
+    // 先下載本專案每天彙整好的清單；成功就不用再個別下載已經包含在裡面的來源
+    const feed = await fetchFeed();
+    results.push(feed.result);
+    if (feed.ok) all.push(...feed.domains);
     for (const src of sources) {
+      if (feed.ok && src.inFeed) {
+        const inFeed = feed.sources.get(src.id);
+        results.push({ id: src.id, name: src.name, ok: true, viaFeed: true, count: inFeed ? inFeed.count : 0 });
+        continue;
+      }
       try {
         const domains = parseDomainList(await fetchText(src.url));
         if (!domains.length) throw new Error('檔案裡找不到網域');

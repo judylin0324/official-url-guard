@@ -5,10 +5,10 @@ name: 發布網站（GitHub Pages）
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'web/**', 'gmail/**', 'tools/build-*.mjs', 'manifest.json', '.github/workflows/pages.yml']
-  # 「更新官網 Logo 指紋」由機器人提交，不會觸發 push 事件，所以跑完後另外觸發
+    paths: ['src/**', 'web/**', 'gmail/**', 'feed/**', 'tools/build-*.mjs', 'manifest.json', '.github/workflows/pages.yml']
+  # 「更新官網 Logo 指紋」「每日涉詐清單彙整」由機器人提交，不會觸發 push 事件，所以跑完後另外觸發
   workflow_run:
-    workflows: ['更新官網 Logo 指紋']
+    workflows: ['更新官網 Logo 指紋', '每日涉詐清單彙整']
     types: [completed]
   workflow_dispatch:
 

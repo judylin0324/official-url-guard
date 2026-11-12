@@ -23,6 +23,9 @@ for (const f of ['Code.gs', 'Engine.gs']) copyFileSync(path.join(root, 'gmail/di
 const json = exportOfficial(OFFICIAL_SITES);
 writeFileSync(path.join(out, 'official-sites.json'), JSON.stringify(json));
 writeFileSync(path.join(out, 'logo-hashes.json'), JSON.stringify(LOGO_HASHES));
+// 每日彙整的涉詐網域清單（tools/build-feed.mjs 產生，由「每日涉詐清單彙整」工作流程提交到 feed/）
+copyFileSync(path.join(root, 'feed/blocklist.txt'), path.join(out, 'blocklist.txt'));
+copyFileSync(path.join(root, 'feed/meta.json'), path.join(out, 'blocklist-meta.json'));
 writeFileSync(path.join(out, '.nojekyll'), '');
 const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 console.log(`_site/ 已產生：index.html、privacy.html、official-sites.json（${json.sites.length} 個機構）；插件版本 ${manifest.version}`);

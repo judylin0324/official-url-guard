@@ -145,6 +145,7 @@ const { OFFICIAL_SITES } = await import('../src/data/official-sites.js');
 const { exportOfficial } = await import('../src/lib/remote-official.js');
 let remoteOfficial = exportOfficial([...OFFICIAL_SITES, { name: '測試新機構', category: '購物', domains: ['brand-new-official.com.tw'] }]);
 const requestedHosts = new Set();
+let feedMock = null;
 await context.route('**/*', (route) => {
   const u = new URL(route.request().url());
   requestedHosts.add(u.hostname);
@@ -160,6 +161,13 @@ await context.route('**/*', (route) => {
       return route.fulfill({ status: 200, contentType: 'application/rdap+json', body: JSON.stringify({ ldhName: 'tw-parking-pay.com', events: [{ eventAction: 'registration', eventDate: FIVE_DAYS_AGO }] }) });
     }
     return route.fulfill({ status: 404, contentType: 'application/rdap+json', body: '{}' });
+  }
+  // 每日彙整清單：預設不存在（擴充功能要自動改用原始來源）；feedMock 有值時才提供
+  if (u.hostname === 'judylin0324.github.io' && /\/blocklist(-meta\.json|\.txt)$/.test(u.pathname)) {
+    if (!feedMock) return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' });
+    return u.pathname.endsWith('.txt')
+      ? route.fulfill({ status: 200, contentType: 'text/plain; charset=utf-8', body: feedMock.domains.join('\n') })
+      : route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(feedMock.meta) });
   }
   if (u.hostname === 'judylin0324.github.io' && u.pathname.endsWith('/official-sites.json')) {
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(remoteOfficial) });
@@ -564,6 +572,24 @@ const off2 = await sw.evaluate(async () => {
   return { level: v.level, status: officialRemoteStatus };
 });
 check('官方清單線上更新：含涉詐網域的清單被拒絕', off2.level !== 'official' && off2.status && !off2.status.ok, off2.status && off2.status.error);
+
+// 17b. 每日彙整清單：下載得到就用它，並跳過已包含在裡面的原始來源；太舊就改用原始來源
+const feedDomains = ['feed-only-scam.top', ...Array.from({ length: 1200 }, (_, i) => `feed-scam-${i}.top`)];
+feedMock = { domains: feedDomains, meta: { version: 1, generatedAt: new Date().toISOString(), count: feedDomains.length, sources: [{ id: 'twnic', count: 700 }, { id: 'g0v165', count: 501 }] } };
+requestedHosts.clear();
+const feed1 = await sw.evaluate(async () => {
+  const r = await globalThis.__oug.update165();
+  const v = await globalThis.__oug.assess('https://feed-only-scam.top/');
+  return { sources: r.sources, level: v.level };
+});
+const fs1 = Object.fromEntries((feed1.sources || []).map((x) => [x.id, x]));
+check('彙整清單：下載成功，清單裡的網域判為危險', fs1.feed && fs1.feed.ok && fs1.feed.count === feedDomains.length && feed1.level === 'danger', JSON.stringify(fs1.feed));
+check('彙整清單：已包含的原始來源不再個別下載', fs1.twnic && fs1.twnic.viaFeed && fs1.g0v165 && fs1.g0v165.viaFeed && !requestedHosts.has('raw.githubusercontent.com'), JSON.stringify([...requestedHosts]));
+feedMock.meta.generatedAt = new Date(Date.now() - 6 * 86400000).toISOString();
+const feed2 = await sw.evaluate(async () => (await globalThis.__oug.update165()).sources);
+const fs2 = Object.fromEntries((feed2 || []).map((x) => [x.id, x]));
+check('彙整清單：超過 4 天沒更新就改用原始來源', fs2.feed && !fs2.feed.ok && /沒有更新/.test(fs2.feed.error) && fs2.twnic && !fs2.twnic.viaFeed, JSON.stringify(fs2.feed));
+feedMock = null;
 
 // 18. 網頁信箱：開信時檢查（模擬 Gmail／Outlook 畫面）
 await page.goto('https://mail.google.com/mail/u/0/#inbox/abc').catch(() => {});

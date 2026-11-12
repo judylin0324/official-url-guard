@@ -1,0 +1,54 @@
+name: 每日涉詐清單彙整
+# 每天下載公開的涉詐網域清單（src/data/list-sources.js 裡標示 inFeed 的來源），
+# 檢查、合併、淨化後提交到 feed/，再觸發「發布網站」。擴充功能與 Gmail 收件匣過濾下載彙整後的這一份。
+# 來源下載失敗或筆數驟降時：沿用上次成功的資料，並自動開一個 Issue 通知維護者；恢復正常後自動關閉。
+
+on:
+  schedule:
+    - cron: '17 19 * * *' # 每天 03:17（台灣時間）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: daily-feed
+  cancel-in-progress: false
+
+jobs:
+  feed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: 彙整清單
+        id: build
+        run: node tools/build-feed.mjs | tee feed-build.log
+      - name: 檢查
+        run: npm test
+      - name: 寫入摘要
+        run: |
+          { echo '```'; cat feed-build.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: 來源異常時開 Issue，恢復後關閉
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROBLEMS: ${{ steps.build.outputs.problems }}
+        run: |
+          gh label create feed-health --color D93F0B --description '涉詐清單來源異常（自動建立）' 2>/dev/null || true
+          open=$(gh issue list --label feed-health --state open --json number --jq '.[0].number // empty')
+          if [ "${PROBLEMS:-0}" != "0" ]; then
+            if [ -n "$open" ]; then gh issue comment "$open" --body-file feed/problems.md
+            else gh issue create --title "涉詐清單來源異常（$(date -u +%F)）" --label feed-health --body-file feed/problems.md; fi
+          elif [ -n "$open" ]; then
+            gh issue close "$open" --comment "$(date -u +%F)：所有來源恢復正常，共 ${{ steps.build.outputs.count }} 筆。"
+          fi
+      - name: 提交
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add feed
+          if git diff --cached --quiet; then echo "清單沒有變化"; else git commit -m "每日涉詐清單彙整 $(date -u +%F)" && git pull --rebase origin main && git push; fi

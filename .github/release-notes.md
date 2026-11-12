@@ -24,5 +24,8 @@
 - 抄襲官網的痕跡、官網 Logo 圖片比對、網頁上的 QR Code、打字途中偷傳卡號、送出卡號前最後確認
 - 一鍵通報網詐通報查詢網（自動截圖存證）、一鍵查網站註冊多久
 - Gmail、Outlook、Yahoo 網頁信箱開信自動檢查
+- Google 訊息網頁版（Android 簡訊）、Messenger、Telegram、WhatsApp 網頁版：自動檢查對方傳來的訊息
+- 手機檢查網頁可以安裝成 App；Android 可從簡訊或 LINE 長按訊息「分享」到官網守門員
+- 涉詐網域清單改由專案每天彙整、檢查後發布，下載更快，來源異常時自動通知維護者
 
 完整說明見 [README](https://github.com/judylin0324/official-url-guard#readme)。這是輔助工具，不保證攔截所有詐騙；有疑問請撥 **165**。

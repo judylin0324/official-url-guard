@@ -19,6 +19,9 @@ var SETTINGS = {
 var LABEL_ROOT = '官網守門員';
 var LABEL_SCAM = '官網守門員/疑似詐騙';
 var LABEL_CAUTION = '官網守門員/請小心';
+// 本專案每天彙整好的涉詐清單（已包含下面兩個原始來源）；下載不到或筆數異常時才改抓原始來源
+var FEED_URL = 'https://judylin0324.github.io/official-url-guard/blocklist.txt';
+var FEED_MIN_COUNT = 1000;
 var LIST_SOURCES = [
   'https://raw.githubusercontent.com/lf94878964/Taiwan-Blocked-Domains/main/blocked_domains.txt',
   'https://raw.githubusercontent.com/g0v-data/165-data/main/gamble.csv',
@@ -117,7 +120,14 @@ function getScamDomains_() {
     if (Object.keys(parts).length === keys.length) return keys.map(function (k) { return parts[k]; }).join('\n').split('\n').filter(Boolean);
   }
   var all = [];
-  LIST_SOURCES.forEach(function (url) {
+  try {
+    var feed = UrlFetchApp.fetch(FEED_URL, { muteHttpExceptions: true });
+    if (feed.getResponseCode() === 200) all = OUG.parseDomainList(feed.getContentText());
+  } catch (e) {
+    console.log('彙整清單下載失敗（' + e + '），改用原始來源');
+  }
+  if (all.length < FEED_MIN_COUNT) all = [];
+  (all.length ? [] : LIST_SOURCES).forEach(function (url) {
     try {
       var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
       if (res.getResponseCode() === 200) all = all.concat(OUG.parseDomainList(res.getContentText()));

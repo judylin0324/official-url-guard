@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-12T06:09:32.496Z",
+  "count": 31604,
+  "removedProtected": 1,
+  "sources": [
+    {
+      "id": "twnic",
+      "name": "TWNIC 停止解析詐騙網址（社群整理）",
+      "previous": 0,
+      "ok": true,
+      "carried": false,
+      "count": 1693,
+      "lastOkAt": "2026-11-12T06:09:32.496Z"
+    },
+    {
+      "id": "g0v165",
+      "name": "165 假投資（博弈）網站（g0v 鏡像）",
+      "previous": 0,
+      "ok": true,
+      "carried": false,
+      "count": 29929,
+      "lastOkAt": "2026-11-12T06:09:32.496Z"
+    }
+  ],
+  "problems": []
+}
