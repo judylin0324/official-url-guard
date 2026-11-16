@@ -1,4 +1,4 @@
-官網守門員每週評估（2026-11-09）
+官網守門員每週評估（2026-11-16）
 
 TWNIC 停止解析詐騙網址：共 1734｜危險 289（16.7%）｜可疑 518（29.9%）｜至少提醒 46.5%｜其他 927
     393  Fake e-commerce one-page scam            危險 12.0%  至少提醒 37.4%
@@ -69,22 +69,24 @@ TWNIC 停止解析詐騙網址：共 1734｜危險 289（16.7%）｜可疑 518�
    platform https://img-se.s3.us-west-1.amazonaws.com/index.html  LSE（London Stock Exchange）
    platform https://appdown-2.s3.ap-southeast-1.amazonaws.com/appdown-28  OKdatt
 Chrome 台灣熱門網站（誤判檢查；排名越後面越可能本身就是詐騙站）：
-   前   1000 名（累計 1000）：危險 0（0.0%）｜可疑 4（0.4%）
-   前   5000 名（累計 5000）：危險 0（0.0%）｜可疑 32（0.6%）
-   前  10000 名（累計 10000）：危險 1（0.0%）｜可疑 75（0.8%）
-   前  50000 名（累計 50000）：危險 9（0.0%）｜可疑 380（0.8%）
-   前 100000 名（累計 100000）：危險 48（0.0%）｜可疑 753（0.8%）
-   前 500000 名（累計 246948）：危險 171（0.1%）｜可疑 2771（1.1%）
+   前   1000 名（累計 1000）：危險 0（0.0%）｜可疑 5（0.5%）
+   前   5000 名（累計 5000）：危險 0（0.0%）｜可疑 38（0.8%）
+   前  10000 名（累計 10000）：危險 4（0.0%）｜可疑 82（0.8%）
+   前  50000 名（累計 50000）：危險 11（0.0%）｜可疑 433（0.9%）
+   前 100000 名（累計 100000）：危險 49（0.0%）｜可疑 843（0.8%）
+   前 500000 名（累計 244697）：危險 195（0.1%）｜可疑 3124（1.3%）
    ── 前 5 萬名中被判危險的 ──
     10000 https://ibongift.com                          網址含「統一超商 7-ELEVEN」相關字樣「ibon」，但不是官方網域
-    50000 https://hlpb.twgov.mobi                       網址裡有「gov」「tw」字樣，但不是政府網域（政府網址一定以 .gov.tw 結尾）
+    10000 https://ranfang.top                           和「萬芳醫院」官方網址 wanfang.gov.tw 只差一個字
+    10000 https://ipass.cyberbiz.co                     和「一卡通票證公司」官方網址 i-pass.com.tw 幾乎一樣，只是換了長得像的字元或加了符號
+    10000 https://apple1314.vip                         網址包含「Apple」的名稱「apple」，但不是官方網域（官方是 apple.com）
     50000 https://gamania-accounts.firebaseapp.com      網址包含「遊戲橘子」的名稱「gamania」，但不是官方網域（官方是 gamania.com）
-    50000 https://ipass.cyberbiz.co                     和「一卡通票證公司」官方網址 i-pass.com.tw 幾乎一樣，只是換了長得像的字元或加了符號
-    50000 https://www.netflixgc.com                     網域開頭就是「Netflix」的「netflix」，但不是官方網域
-    50000 https://apple1314.vip                         網址包含「Apple」的名稱「apple」，但不是官方網域（官方是 apple.com）
-    50000 https://twitterxz.com                         網域開頭就是「X（Twitter）」的「twitter」，但不是官方網域
-    50000 https://sagawa.store                          網址就是「佐川急便」的品牌字「sagawa」，但不是官方網域
     50000 https://hotel.twagoda.com                     網址包含「Agoda」的名稱「agoda」，但不是官方網域（官方是 agoda.com）
+    50000 http://www.amazondna.com                      網域開頭就是「Amazon」的「amazon」，但不是官方網域
+    50000 https://sport116.taichung-gov.tw              網址裡出現「gov.tw」字樣，但其實不是政府網域（真正的政府網址一定是以 .gov.tw 結尾）
+    50000 https://hlpb.twgov.mobi                       網址裡有「gov」「tw」字樣，但不是政府網域（政府網址一定以 .gov.tw 結尾）
+    50000 https://www.netflixgc.com                     網域開頭就是「Netflix」的「netflix」，但不是官方網域
+    50000 https://www.cathaypacific80.com               網址包含「國泰航空」的名稱「cathaypacific」，但不是官方網域（官方是 cathaypacific.com）
 訊息案例【fraud】57 則：caution 18｜danger 16｜no-url 21｜unknown 2
 訊息案例【trustworthy】19 則：no-url 19
 訊息案例【insufficient-evidence】21 則：caution 3｜unknown 3｜no-url 14｜danger 1
@@ -94,8 +96,8 @@ Chrome 台灣熱門網站（誤判檢查；排名越後面越可能本身就是�
    unknown us-item-trade-code.en.yaml: Deal! I'll give you the limited hat for your two commons. The in-game trade window is bugg
 
 ── 網域名稱小模型（只量測，不覆寫模型）──
-訓練：詐騙 23590、正常 50596｜測試：詐騙 4330、正常 12450
-正常網站誤判 2.0% 的門檻 0.811 → 新詐騙網域抓到 24.7%
-正常網站誤判 1.0% 的門檻 0.857 → 新詐騙網域抓到 18.0%
-正常網站誤判 0.5% 的門檻 0.897 → 新詐騙網域抓到 11.7%
-正常網站誤判 0.2% 的門檻 0.931 → 新詐騙網域抓到 6.8%
+訓練：詐騙 23590、正常 51151｜測試：詐騙 4330、正常 12609
+正常網站誤判 2.0% 的門檻 0.842 → 新詐騙網域抓到 24.2%
+正常網站誤判 1.0% 的門檻 0.882 → 新詐騙網域抓到 17.3%
+正常網站誤判 0.5% 的門檻 0.914 → 新詐騙網域抓到 11.6%
+正常網站誤判 0.2% 的門檻 0.933 → 新詐騙網域抓到 8.2%
