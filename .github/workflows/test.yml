@@ -15,6 +15,11 @@ jobs:
           node-version: 22
       - name: 單元測試與網址語料
         run: npm test
+      - name: LINE 機器人：在 Cloudflare Workers 執行環境（workerd）測試
+        working-directory: line-bot
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
       - name: 安裝 Chromium
         run: |
           npm install --no-save playwright@1.63.0

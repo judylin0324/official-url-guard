@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.wrangler/
+src/generated/
+.dev.vars
+設定結果.txt
+.setup-secrets.json

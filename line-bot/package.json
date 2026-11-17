@@ -1,0 +1,25 @@
+{
+  "name": "official-url-guard-line-bot",
+  "version": "0.8.0",
+  "private": true,
+  "type": "module",
+  "description": "官網守門員 LINE 機器人（Cloudflare Worker）",
+  "scripts": {
+    "build": "node ../tools/build-line-bot.mjs",
+    "test": "npm run build && wrangler deploy --dry-run --outdir dist && node test/workerd-smoke.mjs",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "wrangler deploy",
+    "setup": "node tools/setup.mjs",
+    "richmenu": "node tools/richmenu.mjs",
+    "validate": "node tools/validate-messages.mjs"
+  },
+  "dependencies": {
+    "jpeg-js": "0.4.4"
+  },
+  "devDependencies": {
+    "wrangler": "4.156.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

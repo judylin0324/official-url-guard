@@ -1,0 +1,36 @@
+name: LINE 通報彙整
+# 每週一整理 LINE 機器人收到的「一鍵通報」「回報誤判／漏判」，開一個 Issue 給維護者處理。
+# 需要密鑰 LINE_BOT_URL、LINE_BOT_REPORTS_TOKEN（line-bot/設定結果.txt）；沒有設定時略過。
+
+on:
+  schedule:
+    - cron: '23 1 * * 1' # 每週一 09:23（台灣時間）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LINE_BOT_URL: ${{ secrets.LINE_BOT_URL }}
+      LINE_BOT_REPORTS_TOKEN: ${{ secrets.LINE_BOT_REPORTS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: 整理通報
+        id: build
+        run: node tools/line-reports.mjs line-reports.md
+      - name: 開 Issue
+        if: steps.build.outputs.count != '' && steps.build.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.build.outputs.title }}
+        run: |
+          gh label create line-reports --color 0E8A16 --description 'LINE 使用者通報彙整（自動建立）' 2>/dev/null || true
+          gh issue create --title "$TITLE" --label line-reports --body-file line-reports.md

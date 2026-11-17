@@ -1,0 +1,24 @@
+# 官網守門員 LINE 機器人（Cloudflare Workers）
+# 第一次部署請執行 npm run setup（Windows 可雙擊 setup.cmd）：它會建立 KV、部署、設定密鑰、LINE Webhook 與圖文選單。
+#
+# 設定值都用「密鑰」（wrangler secret put …）存在 Cloudflare，不寫在這個檔案裡，自動部署時才不會被蓋掉：
+#   LINE_CHANNEL_SECRET、LINE_CHANNEL_ACCESS_TOKEN  必填
+#   REPORTS_TOKEN  通報彙整 API 的密鑰（setup 自動產生）
+#   BOT_ADD_URL    官方帳號的加好友連結（https://lin.ee/…），會出現在「傳給親友提醒」的文字裡
+#   IMAGE_QR       設為 on 才解讀圖片裡的 QR Code（需要 Workers 付費方案）
+name = "official-url-guard-line"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+keep_vars = true
+
+# 部署前先把最新的涉詐網域清單打包進去
+[build]
+command = "node ../tools/build-line-bot.mjs"
+
+# 通報彙整與群組設定（setup 會自動建立並填入 id；GitHub Actions 自動部署時用 LINE_BOT_KV_ID 密鑰取代）
+[[kv_namespaces]]
+binding = "OUG_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[observability]
+enabled = true

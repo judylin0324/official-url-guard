@@ -22,7 +22,7 @@ const SENSITIVE_CATEGORIES = new Set(['政府機關', '公用事業', '銀行', 
 // 這些類別的名稱常以「付款方式」出現在一般商店結帳頁，所以只在網頁標題自稱時才算冒名
 const TITLE_ONLY_CATEGORIES = new Set(['支付', '網路服務']);
 
-const SHORTENERS = new Set([
+export const SHORTENERS = new Set([
   'bit.ly', 'tinyurl.com', 'reurl.cc', 'lihi.cc', 'lihi1.cc', 'lihi1.com', 'pse.is', 'ppt.cc', 'is.gd', 'cutt.ly',
   'shorturl.at', 'rb.gy', 't.ly', 'ow.ly', 'buff.ly', 'rebrand.ly', 's.id', 'tiny.cc', 'v.gd', 'qrco.de', 't.cn',
   'surl.li', 'short.gy', 'gg.gg', 'goo.su',

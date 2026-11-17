@@ -8,7 +8,7 @@
 - 手機版簡訊檢查網頁：<https://judylin0324.github.io/official-url-guard/>（啟用 GitHub Pages 後）
 - 隱私權政策：<https://judylin0324.github.io/official-url-guard/privacy.html>
 
-包含兩個部分：
+包含以下幾個部分：
 
 | | 用在哪裡 | 能做什麼 |
 |---|---|---|
@@ -16,6 +16,7 @@
 | **簡訊檢查網頁**（`web/index.html`） | 手機、任何瀏覽器 | 貼上簡訊、LINE 訊息或 Email，不用點開就能檢查 |
 | **簡訊、通訊軟體網頁版**（擴充功能內建） | 電腦 | 自動檢查 Google 訊息網頁版（Android 簡訊）、Messenger、Telegram、WhatsApp 網頁版裡對方傳來的訊息 |
 | **Gmail 收件匣過濾**（`gmail/`） | Gmail（任何裝置） | 在你自己的 Google 帳號裡每 10 分鐘檢查新信，詐騙信移出收件匣 |
+| **LINE 機器人**（`line-bot/`） | 手機、電腦的 LINE | 轉傳可疑訊息就回覆結果卡片、一鍵通報；加進家族群組自動提醒。部署方式見 [line-bot/README.md](line-bot/README.md) |
 
 ## 五道防線
 
@@ -181,6 +182,16 @@ Email 另外會檢查：
   - 機構數必須在合理範圍內。
   - 一次最多新增 300 個網域。
 
+## LINE 機器人
+
+收到可疑的簡訊或 LINE 訊息，轉傳給官方帳號就能檢查，不用點開連結；把它加進家族群組，有人貼出很可能是詐騙的連結時，會引用那則訊息提醒大家。
+
+- **結果卡片**：燈號、冒充誰、真正的官方網址、正確的繳費管道；短網址會先問出真正的目的地再判斷。
+- **一鍵通報**：按一下就記錄（每週整理給維護者），並回覆「複製通報內容」「開啟網詐通報查詢網」兩個按鈕，兩步完成向政府通報。
+- **回報誤判／漏判**：卡片上直接按，不需要 GitHub 帳號。
+- **傳給親友提醒**：分享的文字裡網址已拆開（`mvdis-gov-tw[.]cc`），不會被誤點。
+- 這是唯一在雲端判斷的入口：訊息判斷完就丟掉，通報只記錄網址與次數。部署在 Cloudflare Workers（免費方案即可），設定方式見 [line-bot/README.md](line-bot/README.md)。
+
 ## 回報誤判、漏判
 
 警告頁、全頁警告、工具列視窗、右鍵檢查頁、手機網頁都有「回報誤判」或「回報漏判」，會開啟預填好的 [GitHub Issue 表單](https://github.com/judylin0324/official-url-guard/issues/new/choose)。回報內容會公開，所以網址只保留到路徑，查詢參數（常含 email、登入代碼）一律移除。
@@ -194,6 +205,8 @@ Email 另外會檢查：
 | `weekly-eval.yml` | 每週一 | 下載最新的 TWNIC、165、Chrome 熱門網站資料重跑評估，報告存在 `reports/eval-latest.txt` |
 | `logo-hashes.yml` | 每週日 | 打開官方網站首頁，更新官網 Logo 指紋（`src/data/logo-hashes.js`），完成後觸發「發布網站」讓插件線上更新 |
 | `daily-feed.yml` | 每天 | 彙整涉詐網域清單到 `feed/`，來源異常自動開 Issue，完成後觸發「發布網站」 |
+| `line-bot.yml` | 程式變更、每日清單彙整完成後 | 重新部署 LINE 機器人（涉詐清單打包在機器人裡）；沒有設定 Cloudflare 密鑰時略過 |
+| `line-reports.yml` | 每週一 | 把 LINE 機器人收到的通報、誤判／漏判回報整理成 Issue |
 | `release.yml` | 推送 `v0.4.0` 這類標籤 | 檢查版本號、打包擴充功能、建立 GitHub Release |
 
 第一次使用 GitHub Pages：repo 的 **Settings → Pages → Source** 選「**GitHub Actions**」。
@@ -269,7 +282,8 @@ Chrome 的增強型防護很好，**建議兩個一起開**，彼此互補。
 
 | 測試 | 結果 |
 |---|---|
-| 單元測試（含 225 個正常／詐騙網址語料、清單淨化、165 雙標題列 CSV、官方清單線上更新的安全檢查、小模型、真實詐騙信、轉址拆解、抄襲官網、偷傳卡號、正規金流、假 3D 驗證、小額誘餌、正確繳費管道、QR Code 解碼與 Reed-Solomon、Logo 指紋、AI 判讀規則、模擬 Apps Script 環境執行 Gmail 收件匣過濾、訊息網站轉接設定、每日清單彙整與來源健檢、程式碼裡各種藏法的網址、打包器與多層包裝、擴充功能套件檢查） | 94 項全部通過 |
+| 單元測試（含 225 個正常／詐騙網址語料、清單淨化、165 雙標題列 CSV、官方清單線上更新的安全檢查、小模型、真實詐騙信、轉址拆解、抄襲官網、偷傳卡號、正規金流、假 3D 驗證、小額誘餌、正確繳費管道、QR Code 解碼與 Reed-Solomon、Logo 指紋、AI 判讀規則、模擬 Apps Script 環境執行 Gmail 收件匣過濾、訊息網站轉接設定、每日清單彙整與來源健檢、程式碼裡各種藏法的網址、打包器與多層包裝、擴充功能套件檢查、LINE 機器人的回覆內容與 LINE 格式限制、一鍵通報、群組行為、圖文選單） | 113 項全部通過 |
+| LINE 機器人在 Cloudflare Workers 執行環境（workerd）測試：模擬 LINE 平台送訊息、一鍵通報寫入 KV、JPEG／PNG QR Code | 8 項全部通過 |
 | Chromium 實機端對端測試（模擬網頁，不連任何真實詐騙網站；另實際下載公開清單、測試回報按鈕、官方清單線上更新、模擬 Gmail／Outlook 開信、點詐騙信連結的攔截、抄襲官網的繳費頁、打字途中偷傳卡號、送出前確認、查註冊日期、通報截圖、三種 QR Code、Logo 比對、模擬的裝置端 AI、模擬 Google 訊息與 WhatsApp 網頁版的詐騙訊息、彙整清單下載與退回原始來源、藏在按鈕、外部 .js 檔、內嵌框架裡的跳轉網址、執行時才解碼與伺服器回傳的網址） | 80 項全部通過 |
 | QR Code 解碼器對照 ZXing 專案的公開測試圖（19 張，不是用自己產生的圖測自己） | 螢幕上的 QR Code 全部解對（15 張，含版本 19、26 的大型碼與日文）；4 張解不出來的都是斜拍照片或印在航照圖上的藝術 QR Code，不是網頁上會出現的形式 |
 
@@ -310,6 +324,8 @@ Chrome 的增強型防護很好，**建議兩個一起開**，彼此互補。
 網頁上的 QR Code、網站圖示與 Logo 在你的電腦上解碼、比對；網頁從別的網站載入的圖片，背景會不帶 Cookie 再下載一次圖片本身來解碼。裝置端 AI 在你的電腦上執行，網頁內容不會上傳。
 
 偷傳卡號的偵測在網頁裡比對，卡號只存在那段程式的記憶體裡，回報給擴充功能的只有「傳到哪個網站」和「是不是還沒按送出」。通報截圖存在你電腦的下載資料夾（「官網守門員通報截圖」，系統不支援中文檔名時為 `OfficialUrlGuard-report`），不會上傳。
+
+LINE 機器人是唯一在雲端判斷的入口，另外說明：訊息判斷完就丟掉，不保存；一鍵通報只記錄網域、路徑與次數，使用者代號只存無法還原的雜湊。詳見[隱私權政策](https://judylin0324.github.io/official-url-guard/privacy.html#line)。
 
 ## 開發
 
@@ -356,6 +372,8 @@ python3 tools/make-icons.py   # 重新產生圖示
 | `feed/`、`tools/build-feed.mjs`、`tools/feed-core.mjs` | 每日彙整的涉詐網域清單與彙整程式 |
 | `web/manifest.webmanifest`、`web/sw.js` | 手機檢查網頁安裝成 App、接收「分享」、離線使用 |
 | `docs/ARCHITECTURE.md`、`docs/MAINTENANCE.md` | 架構說明、維護手冊 |
+| `line-bot/` | LINE 機器人（Cloudflare Worker）：`src/messages.js` 是所有回覆文字與卡片，部署與維護見 `line-bot/README.md` |
+| `tools/build-line-bot.mjs`、`tools/line-reports.mjs` | 把涉詐清單打包進 LINE 機器人、每週通報彙整 |
 | `gmail/` | Gmail 收件匣過濾（Apps Script）：`Code.gs`、URL 替代實作、安裝說明；`node tools/build-gmail.mjs` 產生 `gmail/dist/` |
 
 ### 新增官方網站時

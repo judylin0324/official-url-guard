@@ -10,9 +10,32 @@
 | 每週 | 有沒有新的誤判／漏判回報、清單來源異常 | repo 的 Issues 分頁 | 沒有標籤 `feed-health` 的未結 Issue |
 | 每週 | 每週評估報告 | `reports/eval-latest.txt` | 命中率沒有明顯下降；熱門網站誤判沒有增加 |
 | 每季 | 補齊 Logo 指紋 | 見下方 | |
+| 每週 | LINE 機器人的通報彙整 | Issues 分頁標籤 `line-reports` | 見下方「LINE 使用者通報彙整」 |
 | 每季 | 小模型是否需要重新訓練 | 每週評估報告最後一段 | |
 
 ## 遇到狀況怎麼辦
+
+### LINE 使用者通報彙整（每週一的 `line-reports` Issue）
+
+表格的「建議處理」欄已經依目前的判斷分好類：
+
+- **漏判**（使用者說是詐騙，但目前判為「不在清單」）：打開範例路徑確認（用不會登入任何帳號的瀏覽器），是詐騙就到網詐通報查詢網通報，並比照「有人回報漏判」補規則。
+- **可能誤判**（誤判回報比詐騙通報多）：比照「有人回報誤判」處理。
+- **使用者認為官方網站是詐騙**：多半是使用者誤會；如果是官方網站被冒用（例如官方的短網址、表單被濫用），再考慮調整。
+- 處理完關閉 Issue。
+
+### LINE 機器人沒有回應
+
+1. 打開 `設定結果.txt` 裡的 `LINE_BOT_URL`，應該看到 `"ok": true` 與涉詐清單筆數。打不開：到 Cloudflare 後台 Workers & Pages 看部署狀態。
+2. LINE Developers 的 Messaging API 分頁按 Webhook 旁的「Verify」，應該顯示 Success。失敗：Channel secret 可能換過，重新執行 `line-bot/setup.cmd`。
+3. Cloudflare 後台 → 這個 Worker → Logs，看錯誤訊息。出現「Exceeded CPU」：免費方案的 10 毫秒不夠，改用付費方案。
+4. Channel access token 重新產生過：重新執行 `line-bot/setup.cmd`（會沿用 KV 與通報 API 密鑰）。
+
+### 改 LINE 機器人的回覆文字或卡片
+
+1. 改 `line-bot/src/messages.js`。
+2. `node --test test/line-bot.test.mjs`（會檢查 LINE 的長度與格式限制）。
+3. 推到 `main` 後自動部署；改了卡片版面再跑一次 `npm run validate`（在 `line-bot/`，需要 Channel access token）。
 
 ### 涉詐清單來源異常（收到標籤 `feed-health` 的 Issue）
 

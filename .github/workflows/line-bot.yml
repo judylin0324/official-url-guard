@@ -1,0 +1,63 @@
+name: LINE 機器人部署
+# 程式或資料有變更、每日涉詐清單彙整完成後，自動重新部署 LINE 機器人（清單打包在機器人裡，重新部署才會更新）。
+# 需要的 GitHub 密鑰（第一次部署時 line-bot/設定結果.txt 會列出來）：
+#   CLOUDFLARE_API_TOKEN、CLOUDFLARE_ACCOUNT_ID、LINE_BOT_KV_ID；選填 LINE_BOT_URL（部署後檢查機器人有沒有在運作）
+# 沒有設定密鑰時這個工作流程只會略過，不會失敗。
+
+on:
+  push:
+    branches: [main]
+    paths: ['line-bot/**', 'src/lib/**', 'src/data/official-sites.js', 'src/data/project.js', 'src/data/payment-data.js', 'src/data/risk-data.js', 'src/data/label-model.js', 'tools/build-line-bot.mjs', '.github/workflows/line-bot.yml']
+  workflow_run:
+    workflows: ['每日涉詐清單彙整']
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: line-bot-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      LINE_BOT_KV_ID: ${{ secrets.LINE_BOT_KV_ID }}
+      LINE_BOT_URL: ${{ secrets.LINE_BOT_URL }}
+    steps:
+      - name: 檢查設定
+        id: cfg
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$LINE_BOT_KV_ID" ]; then
+            echo "::notice::尚未設定 CLOUDFLARE_API_TOKEN、CLOUDFLARE_ACCOUNT_ID、LINE_BOT_KV_ID，略過部署（見 line-bot/README.md）"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v5
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          ref: main
+      - uses: actions/setup-node@v5
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          node-version: 22
+      - name: 測試
+        if: steps.cfg.outputs.ready == 'true'
+        run: node --test test/line-bot.test.mjs
+      - name: 部署
+        if: steps.cfg.outputs.ready == 'true'
+        working-directory: line-bot
+        run: |
+          sed -i "s/REPLACE_WITH_KV_NAMESPACE_ID/${LINE_BOT_KV_ID}/" wrangler.toml
+          npm ci --no-audit --no-fund
+          npx wrangler deploy
+      - name: 確認機器人在運作
+        if: steps.cfg.outputs.ready == 'true' && env.LINE_BOT_URL != ''
+        run: |
+          sleep 5
+          curl -fsS "${LINE_BOT_URL%/}/" | tee health.json
+          node -e "const h=require('./health.json'); if(!h.ok||h.blocklist<1000){console.error('機器人狀態異常');process.exit(1)} console.log('\n涉詐清單 '+h.blocklist+' 筆，彙整時間 '+h.feedGeneratedAt)"

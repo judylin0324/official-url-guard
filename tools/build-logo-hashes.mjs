@@ -235,16 +235,20 @@ for (let i = 0; i < entries.length; i++) {
 }
 // 抓到了圖、卻因為和別的機構共用同一張圖而一個指紋都沒留下的機構（畫面上顯示 ✔，結果檔裡卻沒有）
 const keptSites = new Set(hashes.map((x) => x.site));
-const lostToSharing = [...new Set(entries.map((e) => e.site))].filter((name) => !keptSites.has(name));
+const lostToSharing = [...new Set(entries.map((e) => e.site))].filter((name) => !keptSites.has(name)); // 這些機構會沿用上次的指紋（如果有）
 
-// 這次連不上或抓不到圖的機構，沿用上次的指紋（網站暫時故障、擋國外連線時不會被清掉）
+// 這次沒有留下指紋的機構（連不上、抓不到圖，或抓到的圖和別的機構撞在一起），沿用上次的指紋。
+// 網站暫時故障、擋國外連線、或國外執行時只看到同意 Cookie 的頁面，都不會把在台灣取得的指紋清掉。
+// 沿用的指紋如果和這次別的機構的指紋太像，就不沿用（避免兩個機構共用一張圖）。
 if (!process.argv.includes('--no-merge') && PREVIOUS && Array.isArray(PREVIOUS.hashes)) {
-  const fresh = new Set(entries.map((e) => e.site));
   const names = new Set(OFFICIAL_SITES.map((x) => x.name));
   let kept = 0;
   for (const e of PREVIOUS.hashes) {
-    const carry = e.site ? !fresh.has(e.site) && names.has(e.site) : !hashes.some((x) => x.gov);
-    if (carry && !hashes.some((x) => x.h === e.h && x.site === e.site)) { hashes.push(e); kept++; }
+    const carry = e.site ? !keptSites.has(e.site) && names.has(e.site) : !hashes.some((x) => x.gov);
+    if (!carry || hashes.some((x) => x.h === e.h && x.site === e.site)) continue;
+    if (e.site && hashes.some((x) => x.site && x.site !== e.site && !sameFamily(new Set([x.site, e.site])) && hamming(x.h, e.h) <= LOGO_MATCH_DISTANCE)) continue;
+    hashes.push(e);
+    kept++;
   }
   if (kept) console.log(`沿用上次的指紋 ${kept} 個`);
 }

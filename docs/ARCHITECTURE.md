@@ -9,10 +9,11 @@
   ├─ Chrome／Edge 擴充功能      manifest.json、src/background.js、src/content.js、src/pages/
   │    └─ 訊息轉接層            src/adapters/message-sites.js（信箱、簡訊、通訊軟體網頁版，一個網站一筆設定）
   ├─ 手機檢查網頁（可安裝成 App）web/template.html、web/manifest.webmanifest、web/sw.js
-  └─ Gmail 收件匣過濾            gmail/Code.gs（在使用者自己的 Google 帳號執行）
+  ├─ Gmail 收件匣過濾            gmail/Code.gs（在使用者自己的 Google 帳號執行）
+  └─ LINE 機器人                 line-bot/（Cloudflare Worker；唯一在雲端判斷的入口，訊息不保存）
         │  送入：網址、網頁訊號、訊息文字
         ▼
-判斷引擎（怎麼判斷；純計算，不碰瀏覽器 API，三個入口共用同一份）
+判斷引擎（怎麼判斷；純計算，不碰瀏覽器 API，所有入口共用同一份）
   src/lib/checker.js   assessUrl（網址）、assessPage（網頁內容）、assessMessage（簡訊／Email）
   src/lib/domain.js、qr.js、image-hash.js、label-model-core.js
         ▲  載入：清單與參數
@@ -30,13 +31,15 @@
   logo-hashes.yml   每週：重建 Logo 指紋
   weekly-eval.yml   每週：用真實詐騙資料量測命中率與誤判
   pages.yml         發布手機網頁、官方清單、涉詐清單、Logo 指紋到 GitHub Pages
+  line-bot.yml      程式變更、每日清單彙整完成後：重新部署 LINE 機器人
+  line-reports.yml  每週：LINE 使用者的通報、誤判／漏判回報整理成 Issue
   release.yml       推版本標籤：打包擴充功能與 Gmail 指令碼
 ```
 
 設計原則：
 
 1. **判斷只寫一次。** 新增入口不重寫判斷邏輯，只負責把網址或訊息文字送進引擎。`tools/build-web.mjs`、`tools/build-gmail.mjs` 把同一份引擎打包給手機網頁與 Gmail。
-2. **判斷在使用者的裝置上完成。** 不上傳瀏覽紀錄與輸入內容；連網只為了下載清單。
+2. **判斷在使用者的裝置上完成。** 不上傳瀏覽紀錄與輸入內容；連網只為了下載清單。例外是 LINE 機器人（LINE 的訊息只能送到伺服器處理）：訊息判斷完就丟掉，只保存使用者主動按下的通報（網域、路徑、次數）。
 3. **資料與程式分開。** 清單類資料放在專案網站（GitHub Pages），擴充功能每天下載，不用等改版。
 4. **下載的資料一律先檢查。** 涉詐清單先剔除官方與政府網域（`sanitizeDomains`）；官方清單通過 `validateRemoteOfficial` 才採用。任何一份線上資料被竄改，都不能把官方網站擋掉，也不能把詐騙網域變成官方。
 5. **看實際目的地，不看畫面上的字。** 連結文字、按鈕、程式碼都可以造假或隱藏；判斷用的是真正的 `href`、程式裡的跳轉網址，以及瀏覽器實際要連線的網址（最後一道防線，藏多深都攔得到）。
@@ -53,6 +56,18 @@
 | 網頁程式執行時 | `page-links.js`（網頁環境）→ `content.js` | 觀察解碼函式輸出、`window.open`、伺服器回傳的資料裡出現的網域，交給引擎檢查 |
 | 開信、看訊息時 | `content.js` 依 `src/adapters/message-sites.js` 讀取內容 → `assessMessage` | 信件上方警告；簡訊與聊天訊息浮動警告或外框 |
 | 送出卡號、驗證碼前 | `content.js`、`page-watch.js` | 送出前確認；偵測打字途中偷傳卡號 |
+
+## LINE 機器人的資料流
+
+| 時機 | 誰負責 | 做什麼 |
+|---|---|---|
+| 收到 Webhook | `line-bot/src/worker.js` | 驗證 `x-line-signature`，不對就拒絕 |
+| 文字訊息 | `line-bot/src/analyze.js` → `assessMessage` | 短網址先向短網址服務問出目的地，再和其他連結一起判斷 |
+| 回覆 | `line-bot/src/messages.js` | 一對一：結果卡片＋話術提醒＋快速回覆；群組：只在危險時引用該訊息提醒 |
+| 按「一鍵通報」 | `worker.js` → `store.js` | KV 記錄網域與次數（使用者只存雜湊、同一人不重算），回覆複製通報內容與網詐通報網按鈕 |
+| 每週 | `line-reports.yml` → `/api/reports` | 用目前的引擎重新判斷每個被通報的網域，開 Issue 給維護者 |
+
+涉詐清單在部署時打包進 Worker（`tools/build-line-bot.mjs`），判斷資料在 Worker 啟動時建好；Cloudflare 免費方案每個請求只有 10 毫秒 CPU，這樣每則訊息只需要 1–5 毫秒。清單更新靠「每日彙整完成 → 重新部署」。
 
 ## 涉詐清單的兩層來源
 
@@ -76,11 +91,12 @@ feed/blocklist.txt ──發布──▶ https://judylin0324.github.io/official-
 | 新增涉詐清單來源 | `src/data/list-sources.js` | `node tools/build-feed.mjs` 試跑一次 |
 | 支援新的信箱或通訊軟體網頁版；網站改版修選擇器 | `src/adapters/message-sites.js` | `test/adapters.test.mjs`、`test/e2e.mjs` 加一個模擬頁 |
 | 新的詐騙手法（關鍵字、名目） | `src/lib/checker.js`、`src/data/official-sites.js` | `test/checker.test.mjs` 加真實案例 |
-| 新的入口（例如 LINE 機器人） | 新資料夾；用 `tools/build-web.mjs` 的方式打包引擎 | 比照 `test/gmail.test.mjs` 在模擬環境執行 |
+| 新的入口 | 新資料夾；直接匯入 `src/lib/checker.js`（LINE 機器人的做法），或用 `tools/build-web.mjs` 的方式打包 | 比照 `test/line-bot.test.mjs` 用模擬的平台執行 |
+| LINE 機器人的回覆文字、卡片版面 | `line-bot/src/messages.js` | `test/line-bot.test.mjs`（含 LINE 的長度限制）；部署後 `npm run validate` |
 
 ## 尚未完成（依優先順序）
 
-1. LINE 官方帳號機器人：使用者轉傳可疑訊息即回覆判斷。需要雲端服務（這是唯一不在使用者裝置上判斷的入口，隱私權政策要另外說明）。
+1. LINE 機器人已完成，等待部署：需要申請 LINE 官方帳號與 Cloudflare 帳號，執行 `line-bot/setup.cmd`（見 `line-bot/README.md`）。部署後要在真實的 LINE 上確認卡片版面。
 2. 上架 Chrome 線上應用程式商店、Edge 外掛商店；Firefox 版（含 Android）。
 3. 程式重整：`checker.js`、`content.js`、`background.js` 依職責拆檔；判斷規則裡的詞彙表資料化並線上更新。
 4. 24 個機構還沒有 Logo 指紋（2026/11/12 在台灣補跑後 422／446 個有指紋）：多半是網站要求通過驗證畫面或連不上（中國信託、王道銀行、拓元售票等）。
